@@ -1,0 +1,50 @@
+sources:
+  bbc_sport:
+    base_url: "https://www.bbc.com/sport/football"
+    update_interval: 3600  # seconds
+    max_articles: 100
+    categories:
+      - premier-league
+      - champions-league
+      - european-football
+
+  sky_sports:
+    base_url: "https://www.skysports.com/football"
+    update_interval: 3600
+    max_articles: 100
+    categories:
+      - premier-league
+      - transfer-centre
+      - champions-league
+
+extraction:
+  max_concurrent_requests: 5
+  request_delay: 2  # seconds
+  timeout: 30
+  retry_attempts: 3
+  user_agent: "FootballNewsDB/1.0"
+
+transformation:
+  nlp:
+    language_model: "en_core_web_sm"
+    min_confidence: 0.85
+    batch_size: 50
+  
+  sentiment_analysis:
+    model: "vader"
+    threshold_positive: 0.05
+    threshold_negative: -0.05
+
+loading:
+  batch_size: 100
+  validate_schema: true
+  duplicate_check: true
+  index_fields:
+    - url
+    - title
+    - published_date
+
+monitoring:
+  log_level: "INFO"
+  metrics_enabled: true
+  alert_on_failure: true 

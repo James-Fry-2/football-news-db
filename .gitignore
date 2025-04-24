@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Docker
+.docker/
+
+# MongoDB
+data/
+mongodb_data/
+
+# Logs
+*.log
+logs/
+
+# AWS
+.aws/
+aws-credentials.json
+
+# Project specific
+data/temp/
+*.pyc
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/ 
