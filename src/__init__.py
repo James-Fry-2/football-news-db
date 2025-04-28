@@ -1,0 +1,3 @@
+"""
+Football News Database package.
+""" 

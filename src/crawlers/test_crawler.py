@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 
 # Import all crawlers
 from src.crawlers.bbc_crawler import BBCCrawler
+from src.crawlers.ffs_crawler import FFSCrawler
 # Import additional crawlers here as they are created
 # from src.crawlers.espn_crawler import ESPNCrawler
 # from src.crawlers.skysports_crawler import SkySportsCrawler
@@ -22,6 +23,7 @@ logging.basicConfig(
 # Dictionary mapping crawler names to their classes
 CRAWLERS: Dict[str, Type] = {
     'bbc': BBCCrawler,
+    'ffs': FFSCrawler,
     # Add additional crawlers here as they are created
     # 'espn': ESPNCrawler,
     # 'skysports': SkySportsCrawler,

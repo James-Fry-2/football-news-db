@@ -57,4 +57,7 @@ data/temp/
 .coverage
 htmlcov/
 .pytest_cache/
-.mypy_cache/ 
+.mypy_cache/
+
+# Database
+src/config/db_config.py 
