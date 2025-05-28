@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
+# from motor.motor_asyncio import AsyncIOMotorClient
 from loguru import logger
 import os
 from dotenv import load_dotenv
@@ -25,24 +25,24 @@ app.add_middleware(
 )
 
 # Database configuration
-MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
-DB_NAME = os.getenv("DB_NAME", "football_news")
+# MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
+# DB_NAME = os.getenv("DB_NAME", "football_news")
 
 # Database connection
-@app.on_event("startup")
-async def startup_db_client():
-    try:
-        app.mongodb_client = AsyncIOMotorClient(MONGODB_URL)
-        app.mongodb = app.mongodb_client[DB_NAME]
-        logger.info("Connected to MongoDB")
-    except Exception as e:
-        logger.error(f"Failed to connect to MongoDB: {e}")
-        raise HTTPException(status_code=500, detail="Database connection failed")
+# @app.on_event("startup")
+# async def startup_db_client():
+#     try:
+#         app.mongodb_client = AsyncIOMotorClient(MONGODB_URL)
+#         app.mongodb = app.mongodb_client[DB_NAME]
+#         logger.info("Connected to MongoDB")
+#     except Exception as e:
+#         logger.error(f"Failed to connect to MongoDB: {e}")
+#         raise HTTPException(status_code=500, detail="Database connection failed")
 
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    app.mongodb_client.close()
-    logger.info("Closed MongoDB connection")
+# @app.on_event("shutdown")
+# async def shutdown_db_client():
+#     app.mongodb_client.close()
+#     logger.info("Closed MongoDB connection")
 
 # Import routes
 from .routes import articles, players, analysis
@@ -62,13 +62,6 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    try:
-        # Check database connection
-        await app.mongodb.command("ping")
-        return {
-            "status": "healthy",
-            "database": "connected"
-        }
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        raise HTTPException(status_code=503, detail="Service unavailable") 
+    return {
+        "status": "healthy"
+    } 

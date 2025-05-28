@@ -1,65 +1,34 @@
 from typing import List, Optional, Dict
-from datetime import datetime
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from datetime import datetime, timezone
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from loguru import logger
-from bson import ObjectId
-
 from ..models.article import Article
+from ..models.player import Player
+from ..models.team import Team
 
 class ArticleService:
-    def __init__(self, db: AsyncIOMotorDatabase):
-        self.db = db
-        self.collection = db.articles
-
-    async def create_indexes(self):
-        """Create necessary indexes for article collection."""
-        await self.collection.create_index("url", unique=True)
-        await self.collection.create_index("title")
-        await self.collection.create_index("published_date")
+    def __init__(self, session: AsyncSession):
+        self.session = session
 
     async def is_duplicate(self, url: str) -> bool:
-        """
-        Check if an article with the given URL already exists.
-        
-        Args:
-            url: The URL of the article to check
-            
-        Returns:
-            bool: True if the article exists, False otherwise
-        """
-        try:
-            article = await self.collection.find_one({"url": url})
-            return article is not None
-        except Exception as e:
-            logger.error(f"Error checking for duplicate article: {e}")
-            return False
+        query = select(Article).where(Article.url == url)
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none() is not None
 
     async def save_article(self, article_data: Dict) -> Optional[Article]:
-        """
-        Save an article to the database if it doesn't already exist.
-        
-        Args:
-            article_data: Dictionary containing article data
-            
-        Returns:
-            Article: The saved article or None if it was a duplicate
-        """
         try:
-            # Check if article already exists
             if await self.is_duplicate(article_data["url"]):
                 logger.info(f"Duplicate article found: {article_data['url']}")
                 return None
-
-            # Create Article instance
             article = Article(**article_data)
-            
-            # Insert into database
-            await self.collection.insert_one(article.dict())
+            self.session.add(article)
+            await self.session.commit()
+            await self.session.refresh(article)
             logger.info(f"Saved new article: {article.title}")
-            
             return article
-            
         except Exception as e:
+            await self.session.rollback()
             logger.error(f"Error saving article: {e}")
             return None
 
@@ -71,43 +40,38 @@ class ArticleService:
         team: Optional[str] = None,
         player: Optional[str] = None
     ) -> List[Article]:
-        query = {}
+        query = select(Article)
         if source:
-            query["source"] = source
-        if team:
-            query["teams"] = team
-        if player:
-            query["players"] = player
-
-        cursor = self.collection.find(query).skip(skip).limit(limit)
-        articles = await cursor.to_list(length=limit)
-        return [Article(**article) for article in articles]
+            query = query.where(Article.source == source)
+        # Filtering by team/player would require joins
+        query = query.offset(skip).limit(limit)
+        result = await self.session.execute(query)
+        return result.scalars().all()
 
     async def get_article_by_url(self, url: str) -> Optional[Article]:
-        article = await self.collection.find_one({"url": url})
-        return Article(**article) if article else None
+        query = select(Article).where(Article.url == url)
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
 
-    async def create_article(self, article: Article) -> Article:
-        article_dict = article.dict()
-        article_dict["created_at"] = datetime.utcnow()
-        article_dict["updated_at"] = datetime.utcnow()
-        
-        await self.collection.insert_one(article_dict)
-        return article
-
-    async def update_article(self, url: str, article: Article) -> Optional[Article]:
-        article_dict = article.dict(exclude_unset=True)
-        article_dict["updated_at"] = datetime.utcnow()
-        
-        result = await self.collection.update_one(
-            {"url": url},
-            {"$set": article_dict}
-        )
-        
-        if result.modified_count:
-            return await self.get_article_by_url(url)
-        return None
+    async def update_article(self, url: str, article_data: Dict) -> Optional[Article]:
+        query = select(Article).where(Article.url == url)
+        result = await self.session.execute(query)
+        db_article = result.scalar_one_or_none()
+        if not db_article:
+            return None
+        for key, value in article_data.items():
+            setattr(db_article, key, value)
+        db_article.updated_at = datetime.now(timezone.utc)
+        await self.session.commit()
+        await self.session.refresh(db_article)
+        return db_article
 
     async def delete_article(self, url: str) -> bool:
-        result = await self.collection.delete_one({"url": url})
-        return result.deleted_count > 0 
+        query = select(Article).where(Article.url == url)
+        result = await self.session.execute(query)
+        db_article = result.scalar_one_or_none()
+        if not db_article:
+            return False
+        await self.session.delete(db_article)
+        await self.session.commit()
+        return True 

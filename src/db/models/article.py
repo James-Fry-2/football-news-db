@@ -1,35 +1,36 @@
-from datetime import datetime
-from typing import List, Optional
-from pydantic import BaseModel, Field
+from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, Index
+from sqlalchemy.orm import relationship
+from datetime import datetime, timezone
+from ..database import Base
+from .player import article_players
+from .team import article_teams
 
-class Article(BaseModel):
-    url: str = Field(..., description="Unique URL of the article")
-    title: str = Field(..., description="Title of the article")
-    content: str = Field(..., description="Main content of the article")
-    published_date: datetime = Field(..., description="Publication date of the article")
-    source: str = Field(..., description="Source of the article (e.g., 'BBC', 'Sky Sports')")
-    teams: List[str] = Field(default_factory=list, description="List of teams mentioned in the article")
-    players: List[str] = Field(default_factory=list, description="List of players mentioned in the article")
-    summary: Optional[str] = Field(None, description="Optional summary of the article")
-    image_url: Optional[str] = Field(None, description="Optional URL of the article's main image")
-    author: Optional[str] = Field(None, description="Optional author of the article")
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="Timestamp when the article was added to the database")
-    updated_at: datetime = Field(default_factory=datetime.utcnow, description="Timestamp when the article was last updated in the database")
+class Article(Base):
+    __tablename__ = "articles"
 
-    class Config:
-        schema_extra = {
-            "example": {
-                "url": "https://www.bbc.com/sport/football/article123",
-                "title": "Premier League: Latest Transfer News",
-                "content": "Full article content here...",
-                "published_date": "2024-03-20T10:00:00Z",
-                "source": "BBC",
-                "teams": ["Manchester United", "Liverpool"],
-                "players": ["Marcus Rashford", "Mohamed Salah"],
-                "summary": "Latest transfer news from the Premier League",
-                "image_url": "https://example.com/image.jpg",
-                "author": "John Smith",
-                "created_at": "2024-03-20T10:30:00Z",
-                "updated_at": "2024-03-20T10:30:00Z"
-            }
-        } 
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(500), nullable=False)
+    url = Column(String(1000), unique=True, nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    summary = Column(Text)
+    published_date = Column(DateTime, nullable=False, index=True)
+    source = Column(String(100), nullable=False, index=True)
+    author = Column(String(100))
+    status = Column(String(20), default='active')  # active, archived, draft
+    is_deleted = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    deleted_at = Column(DateTime)
+
+    # Relationships
+    players = relationship("Player", secondary=article_players, back_populates="articles")
+    teams = relationship("Team", secondary=article_teams, back_populates="articles")
+
+    # Indexes
+    __table_args__ = (
+        Index('idx_article_status_date', 'status', 'published_date'),
+        Index('idx_article_source_date', 'source', 'published_date'),
+    )
+
+    def __repr__(self):
+        return f"<Article(title='{self.title}', source='{self.source}')>" 

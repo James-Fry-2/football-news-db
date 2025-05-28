@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 """
-Script to run a crawler and upload data to MongoDB.
+Script to run a crawler and upload data to PostgreSQL.
 Usage: python run_crawler.py [crawler_name] [--limit N]
 """
 
 import argparse
 import logging
 import sys
+import asyncio
 from typing import List, Dict
 
 from src.crawlers import BBCCrawler, FFSCrawler
@@ -58,9 +59,9 @@ def run_crawler(crawler_name: str, limit: int = None) -> List[Dict]:
     logger.info(f"Collected {len(articles)} articles")
     return articles
 
-def upload_to_mongodb(articles: List[Dict]) -> None:
+async def upload_to_postgres(articles: List[Dict]) -> None:
     """
-    Upload articles to MongoDB.
+    Upload articles to PostgreSQL.
     
     Args:
         articles: List of article dictionaries to upload
@@ -69,19 +70,20 @@ def upload_to_mongodb(articles: List[Dict]) -> None:
         logger.warning("No articles to upload")
         return
     
-    logger.info("Connecting to MongoDB...")
+    logger.info("Connecting to PostgreSQL...")
     db = DatabaseManager()
     
     try:
-        logger.info(f"Uploading {len(articles)} articles to MongoDB...")
-        db.insert_articles(articles)
+        await db.connect()
+        logger.info(f"Uploading {len(articles)} articles to PostgreSQL...")
+        await db.insert_articles(articles)
         logger.info("Upload complete")
     finally:
-        db.close()
+        await db.close()
 
-def main():
+async def main():
     """Main function to parse arguments and run the crawler."""
-    parser = argparse.ArgumentParser(description="Run a crawler and upload data to MongoDB")
+    parser = argparse.ArgumentParser(description="Run a crawler and upload data to PostgreSQL")
     parser.add_argument("crawler", help="Name of the crawler to run")
     parser.add_argument("--limit", type=int, help="Maximum number of articles to collect")
     
@@ -90,8 +92,8 @@ def main():
     # Run the crawler
     articles = run_crawler(args.crawler, args.limit)
     
-    # Upload to MongoDB
-    upload_to_mongodb(articles)
+    # Upload to PostgreSQL
+    await upload_to_postgres(articles)
 
 if __name__ == "__main__":
-    main() 
+    asyncio.run(main()) 
