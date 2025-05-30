@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 import os
 from dotenv import load_dotenv
+from src.db.database import Database
+from src.config.db_config import DATABASE_URL
 
 # Load environment variables
 load_dotenv()
@@ -29,20 +31,24 @@ app.add_middleware(
 # DB_NAME = os.getenv("DB_NAME", "football_news")
 
 # Database connection
-# @app.on_event("startup")
-# async def startup_db_client():
-#     try:
-#         app.mongodb_client = AsyncIOMotorClient(MONGODB_URL)
-#         app.mongodb = app.mongodb_client[DB_NAME]
-#         logger.info("Connected to MongoDB")
-#     except Exception as e:
-#         logger.error(f"Failed to connect to MongoDB: {e}")
-#         raise HTTPException(status_code=500, detail="Database connection failed")
+@app.on_event("startup")
+async def startup_db_client():
+    """Initialize database connection on startup."""
+    try:
+        await Database.connect_db(DATABASE_URL)
+        logger.info("Successfully connected to PostgreSQL")
+    except Exception as e:
+        logger.error(f"Failed to connect to PostgreSQL: {e}")
+        raise HTTPException(status_code=500, detail="Database connection failed")
 
-# @app.on_event("shutdown")
-# async def shutdown_db_client():
-#     app.mongodb_client.close()
-#     logger.info("Closed MongoDB connection")
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    """Close database connection on shutdown."""
+    try:
+        await Database.close_db()
+        logger.info("Closed PostgreSQL connection")
+    except Exception as e:
+        logger.error(f"Error closing PostgreSQL connection: {e}")
 
 # Import routes
 from .routes import articles, players, analysis
