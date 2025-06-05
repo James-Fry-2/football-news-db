@@ -1,14 +1,46 @@
 version: '3.8'
 
 services:
-  app:
-    build: .
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
     env_file:
       - .env
     depends_on:
       - db
+    volumes:
+      - ./src:/app/src
+    networks:
+      - app-network
+
+  scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile.scraper
+    env_file:
+      - .env
+    depends_on:
+      - db
+    volumes:
+      - ./src:/app/src
+    networks:
+      - app-network
+
+  llm:
+    build:
+      context: .
+      dockerfile: Dockerfile.llm
+    env_file:
+      - .env
+    depends_on:
+      - db
+    volumes:
+      - ./src:/app/src
+    networks:
+      - app-network
 
   db:
     image: postgres:13
@@ -18,6 +50,12 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
 
 volumes:
   postgres_data: 

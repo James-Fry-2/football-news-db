@@ -15,3 +15,15 @@ LOG_LEVEL=INFO
 # Crawler Settings
 CRAWLER_INTERVAL=3600  # 1 hour in seconds
 MAX_ARTICLES_PER_CRAWL=100
+
+# OpenAI API Settings
+OPENAI_API_KEY=your-openai-api-key-here
+
+# Pinecone Settings
+PINECONE_API_KEY=your-pinecone-api-key-here
+PINECONE_ENVIRONMENT=gcp-starter  # or your specific environment
+
+# Vector Service Settings
+VECTOR_INDEX_NAME=football-news
+VECTOR_NAMESPACE=articles
+VECTOR_DIMENSIONS=1536  # OpenAI text-embedding-3-small dimensions

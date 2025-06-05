@@ -1,0 +1,7 @@
+# LLM Processing specific requirements
+pinecone-client>=3.0.0
+openai>=1.0.0
+langchain>=0.1.0
+tiktoken>=0.5.0
+python-dotenv==1.0.0
+loguru==0.7.2 

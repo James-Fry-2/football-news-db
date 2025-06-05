@@ -60,6 +60,29 @@ src/
 └── main.py           # Application entry point
 ```
 
+## Environment Variables Setup
+
+Create a `.env` file in the root directory with the following variables:
+
+```env
+# OpenAI API settings
+OPENAI_API_KEY=your-openai-api-key-here
+
+# Pinecone settings
+PINECONE_API_KEY=your-pinecone-api-key-here
+PINECONE_ENVIRONMENT=your-pinecone-environment-here  # e.g., "gcp-starter"
+
+# Vector service settings (optional, defaults shown)
+VECTOR_INDEX_NAME=football-news
+VECTOR_NAMESPACE=articles
+VECTOR_DIMENSIONS=1536
+```
+
+Required packages:
+```bash
+pip install python-dotenv openai pinecone-client
+```
+
 ## Usage
 
 1. Start the API server:
@@ -87,4 +110,19 @@ python src/main.py
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+The vector service can be initialized as follows:
+
+```python
+from src.db.services.vector_service import VectorService
+from src.config.vector_config import OPENAI_API_KEY, PINECONE_API_KEY, PINECONE_ENVIRONMENT
+
+# In your async context
+vector_service = VectorService(
+    session=db_session,
+    openai_api_key=OPENAI_API_KEY,
+    pinecone_api_key=PINECONE_API_KEY,
+    pinecone_environment=PINECONE_ENVIRONMENT
+)
+``` 

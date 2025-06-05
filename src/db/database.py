@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from loguru import logger
-from typing import Optional
+from typing import AsyncGenerator
 
 Base = declarative_base()
 
@@ -19,7 +19,9 @@ class Database:
             cls.engine = create_async_engine(
                 database_url,
                 echo=False,  # Set to True for SQL query logging
-                future=True
+                future=True,
+                pool_pre_ping=True,  # Verify connections before use
+                pool_recycle=3600    # Recycle connections every hour
             )
             
             cls.async_session = sessionmaker(
@@ -40,14 +42,24 @@ class Database:
             logger.info("Closed PostgreSQL connection.")
 
     @classmethod
-    async def get_session(cls) -> AsyncSession:
+    async def get_session(cls) -> AsyncGenerator[AsyncSession, None]:
         if not cls.async_session:
             raise Exception("Database not initialized. Call connect_db first.")
         async with cls.async_session() as session:
-            yield session
+            try:
+                yield session
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await session.close()
 
     @classmethod
     async def init_db(cls):
         """Initialize the database by creating all tables."""
+        # Import models to ensure they're registered with Base
+        from .models import Article, Team, Player
+        
         async with cls.engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all) 
+            await conn.run_sync(Base.metadata.create_all)
+            logger.info("Database tables created successfully.")

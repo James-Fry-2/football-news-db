@@ -57,7 +57,7 @@ class ReportService:
             .group_by(Player.name)
             .order_by(func.count(Article.id).desc())
             .limit(limit)
-        )
+        )    
         result = await self.session.execute(query)
         return result.all()
 

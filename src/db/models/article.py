@@ -1,12 +1,12 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, Index
-from sqlalchemy.orm import relationship
+"""
+Article model - no imports from other models
+"""
+from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, Index, JSON, Float
 from datetime import datetime, timezone
 from ..database import Base
-from .player import article_players
-from .team import article_teams
 
 class Article(Base):
-    __tablename__ = "articles"
+    __tablename__ = "article"
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(500), nullable=False)
@@ -22,15 +22,20 @@ class Article(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     deleted_at = Column(DateTime)
 
-    # Relationships
-    players = relationship("Player", secondary=article_players, back_populates="articles")
-    teams = relationship("Team", secondary=article_teams, back_populates="articles")
+    # Vector-related fields
+    vector_embedding = Column(JSON)
+    embedding_status = Column(String(20), default='pending')  # pending, processing, completed, failed
+    sentiment_score = Column(Float)
+    search_vector_id = Column(String(100), index=True)
+    content_hash = Column(String(64), index=True)
 
     # Indexes
     __table_args__ = (
         Index('idx_article_status_date', 'status', 'published_date'),
         Index('idx_article_source_date', 'source', 'published_date'),
+        Index('idx_article_embedding_status', 'embedding_status'),
+        Index('idx_article_sentiment', 'sentiment_score'),
     )
 
     def __repr__(self):
-        return f"<Article(title='{self.title}', source='{self.source}')>" 
+        return f"<Article(title='{self.title}', source='{self.source}')>"
