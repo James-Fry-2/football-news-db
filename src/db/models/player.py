@@ -12,13 +12,13 @@ class Player(Base):
     name = Column(String(100), nullable=False, index=True)
     position = Column(String(50), index=True)
     nationality = Column(String(100), index=True)
-    birth_date = Column(DateTime)
+    birth_date = Column(DateTime(timezone=True))
     team_id = Column(Integer, ForeignKey('team.id', ondelete='SET NULL'))
     status = Column(String(20), default='active')  # active, injured, retired
     is_deleted = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    deleted_at = Column(DateTime)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     # Indexes
     __table_args__ = (

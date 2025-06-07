@@ -4,7 +4,7 @@
 **Goal**: Transform existing football news database into AI-powered analytics platform  
 **Timeline**: 8 weeks (solo development with Cursor)  
 **Current Status**: Foundation complete, adding LLM capabilities  
-**Budget**: $300-500/month operating costs  
+**Budget**: £100-200/month operating costs  
 
 ---
 
@@ -265,18 +265,27 @@ src/
 
 #### Today's Status: [UPDATE DAILY]
 **Date**: 2025-06-04
-**Current Task**: Modify article models to use vectors 
-**Completed Today**:
-- [ ] Add vector storage
-- [ ] Split docker containers into 3 separate containers, to separate app llm and web crawlers 
-- [ ] Create vector service to add vectors to the scraped articles
+**Current Task**: Modify article models to use vectors
 
-**Date**: ___________
-**Current Task**: ___________
 **Completed Today**:
+- [ x ] Add vector storage
+- [ x ] Split docker containers into 3 separate containers, to separate app llm and web crawlers 
+- [ x ] Create vector service to add vectors to the scraped articles
+
+**Date**: 2025-06-05
+**Current Task**: Test uploading articles through pipeline
+
+**Completed Today**:
+- [ x ] Added team names + players to database using script scraping from 
+- [ ] Test Crawler pipeline
 - [ ] 
-- [ ] 
-- [ ] 
+
+**Date**: 2025-06-06
+**Current Task**: Test uploading articles through pipeline
+
+**Completed Today**:
+- [ ] Test Crawler pipeline
+- [ ] Complete setup of Pinecone
 
 **Blockers**:
 - 
@@ -284,8 +293,8 @@ src/
 **Tomorrow's Priority**:
 - Complete setup of Pinecone
 - Complete setup of Open API 
-- Run scripts\update_premier_league_data.py
-- Test Cawler pipline at larger scale - 1000 articles + 5 crawlers 
+- Test Crawler pipeline at larger scale - 1000 articles + 5 crawlers 
+
 
 #### This Week's Progress:
 - [ ] **Day 1**: Database schema + migration

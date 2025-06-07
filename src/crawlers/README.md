@@ -161,7 +161,7 @@ class ExampleCrawler(BaseCrawler):
 
 ## Testing Your Crawler
 
-The `test_crawler.py` script allows you to test your crawler before integrating it into the main system.
+For detailed testing guidelines and best practices, see [TESTING_README.md](TESTING_README.md).
 
 ### Using the Test Crawler
 

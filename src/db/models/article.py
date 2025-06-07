@@ -13,14 +13,14 @@ class Article(Base):
     url = Column(String(1000), unique=True, nullable=False, index=True)
     content = Column(Text, nullable=False)
     summary = Column(Text)
-    published_date = Column(DateTime, nullable=False, index=True)
+    published_date = Column(DateTime(timezone=True), nullable=False, index=True)
     source = Column(String(100), nullable=False, index=True)
     author = Column(String(100))
     status = Column(String(20), default='active')  # active, archived, draft
     is_deleted = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    deleted_at = Column(DateTime)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     # Vector-related fields
     vector_embedding = Column(JSON)

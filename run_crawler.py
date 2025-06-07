@@ -11,7 +11,10 @@ import asyncio
 from typing import List, Dict
 
 from src.crawlers import BBCCrawler, FFSCrawler
-from src.utils.db import DatabaseManager
+from src.db.database import Database
+from src.db.services.article_service import ArticleService
+from src.config.db_config import DATABASE_URL
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # Configure logging
 logging.basicConfig(
@@ -30,7 +33,7 @@ CRAWLERS = {
     'ffs': FFSCrawler,
 }
 
-def run_crawler(crawler_name: str, limit: int = None) -> List[Dict]:
+async def run_crawler(crawler_name: str, limit: int = None) -> List[Dict]:
     """
     Run a crawler and return the collected articles.
     
@@ -46,54 +49,57 @@ def run_crawler(crawler_name: str, limit: int = None) -> List[Dict]:
         logger.info(f"Available crawlers: {', '.join(CRAWLERS.keys())}")
         return []
     
-    crawler_class = CRAWLERS[crawler_name]
-    logger.info(f"Running {crawler_name} crawler...")
-    
-    crawler = crawler_class()
-    articles = crawler.crawl()
-    
-    if limit and limit > 0:
-        articles = articles[:limit]
-        logger.info(f"Limited to {limit} articles")
-    
-    logger.info(f"Collected {len(articles)} articles")
-    return articles
-
-async def upload_to_postgres(articles: List[Dict]) -> None:
-    """
-    Upload articles to PostgreSQL.
-    
-    Args:
-        articles: List of article dictionaries to upload
-    """
-    if not articles:
-        logger.warning("No articles to upload")
-        return
-    
-    logger.info("Connecting to PostgreSQL...")
-    db = DatabaseManager()
+    # Connect to database
+    await Database.connect_db(DATABASE_URL)
     
     try:
-        await db.connect()
-        logger.info(f"Uploading {len(articles)} articles to PostgreSQL...")
-        await db.insert_articles(articles)
-        logger.info("Upload complete")
+        # Create database session
+        async with Database.get_session() as session:
+            # Create article service
+            article_service = ArticleService(session)
+            
+            # Create crawler instance with database services
+            crawler_class = CRAWLERS[crawler_name]
+            crawler = crawler_class(article_service, session)
+            
+            logger.info(f"Running {crawler_name} crawler...")
+            
+            # Use fetch_articles method (database-driven)
+            articles = await crawler.fetch_articles()
+            
+            if limit and limit > 0:
+                articles = articles[:limit]
+                logger.info(f"Limited to {limit} articles")
+            
+            logger.info(f"Collected {len(articles)} articles")
+            
+            # Save articles to database
+            if articles:
+                logger.info(f"Saving {len(articles)} articles to database...")
+                saved_count = 0
+                for article in articles:
+                    result = await article_service.save_article(article)
+                    if result:
+                        saved_count += 1
+                logger.info(f"Successfully saved {saved_count} articles to database")
+            
+            return articles
+            
     finally:
-        await db.close()
+        await Database.close_db()
 
 async def main():
     """Main function to parse arguments and run the crawler."""
-    parser = argparse.ArgumentParser(description="Run a crawler and upload data to PostgreSQL")
+    parser = argparse.ArgumentParser(description="Run a crawler and save data to PostgreSQL")
     parser.add_argument("crawler", help="Name of the crawler to run")
     parser.add_argument("--limit", type=int, help="Maximum number of articles to collect")
     
     args = parser.parse_args()
     
-    # Run the crawler
-    articles = run_crawler(args.crawler, args.limit)
+    # Run the crawler (it will automatically save to database)
+    articles = await run_crawler(args.crawler, args.limit)
     
-    # Upload to PostgreSQL
-    await upload_to_postgres(articles)
+    logger.info(f"Process completed. {len(articles)} articles processed.")
 
 if __name__ == "__main__":
     asyncio.run(main()) 

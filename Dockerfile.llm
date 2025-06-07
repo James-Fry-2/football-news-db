@@ -17,6 +17,6 @@ RUN pip install --no-cache-dir -r base.txt -r llm.txt
 COPY src/ ./src/
 
 # Create a script to run the LLM processor
-COPY scripts/run_llm_processor.py .
+COPY src/scripts/run_llm_processor.py .
 
 CMD ["python", "scripts/run_llm_processor.py"] 

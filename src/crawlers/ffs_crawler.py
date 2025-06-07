@@ -8,8 +8,11 @@ from typing import List, Dict, Optional
 from datetime import datetime
 import logging
 import re
+from sqlalchemy.ext.asyncio import AsyncSession
+import aiohttp
 
 from src.crawlers.base_crawler import BaseCrawler
+from ..db.services.article_service import ArticleService
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +24,139 @@ class FFSCrawler(BaseCrawler):
     
     BASE_URL = "https://www.fantasyfootballscout.co.uk/articles"
     
-    def __init__(self):
-        super().__init__()
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        })
+    def __init__(self, article_service: ArticleService = None, db_session: AsyncSession = None):
+        """
+        Initialize FFS crawler with site-specific headers.
+        
+        Args:
+            article_service: Service for saving articles to database
+            db_session: Database session for Premier League data
+        """
+        # Initialize base crawler with FFS-specific headers
+        super().__init__(db_session)
+        
+        self.article_service = article_service
+        self.base_url = self.BASE_URL
+        self.site_name = "Fantasy Football Scout"
+    
+    async def fetch_articles(self) -> List[Dict]:
+        """
+        Fetch articles from Fantasy Football Scout.
+        
+        Returns:
+            List of article dictionaries
+        """
+        # Initialize Premier League data if we have a database session
+        if self.db_session:
+            await self.initialize_data(self.db_session)
+        
+        articles = []
+        
+        # Use the base crawler's method to get a properly configured session
+        async with await self.get_aiohttp_session() as session:
+            try:
+                async with session.get(self.base_url) as response:
+                    if response.status != 200:
+                        logger.error(f"Failed to fetch FFS: {response.status}")
+                        return articles
+
+                    html = await response.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    
+                    # Find all article links
+                    article_links = soup.find_all('a', href=True)
+                    
+                    # Process each article
+                    for link in article_links:
+                        href = link.get('href')
+                        if not href:
+                            continue
+                        
+                        # Construct full URL
+                        full_url = href if href.startswith('http') else f"https://www.fantasyfootballscout.co.uk{href}"
+                        
+                        # Get the link text and surrounding content to check if it's Premier League related
+                        link_text = link.get_text().strip()
+                        parent_text = link.parent.get_text().strip()
+                        
+                        if await self.is_premier_league_content(link_text) or await self.is_premier_league_content(parent_text):
+                            article_data = await self.extract_article_data_async(session, full_url)
+                            if article_data:
+                                # Extract entities using database data
+                                entities = await self.extract_mentioned_entities(
+                                    f"{article_data['title']} {article_data['content']}"
+                                )
+                                article_data['teams'] = entities['teams']
+                                article_data['players'] = entities['players']
+                                
+                                articles.append(article_data)
+                                logger.info(f"Found Premier League article: {article_data['title']}")
+
+            except Exception as e:
+                logger.error(f"Error fetching FFS articles: {e}")
+
+        return articles
+
+    async def extract_article_data_async(self, session: aiohttp.ClientSession, url: str) -> Optional[Dict]:
+        """
+        Extract data from a Fantasy Football Scout article.
+        
+        Args:
+            session: aiohttp ClientSession
+            url: Article URL
+            
+        Returns:
+            Dictionary containing article data or None if extraction failed
+        """
+        try:
+            async with session.get(url) as response:
+                if response.status != 200:
+                    logger.warning(f"HTTP {response.status} for {url}")
+                    return None
+
+                html = await response.text()
+                soup = BeautifulSoup(html, 'html.parser')
+                
+                # Extract title
+                title_element = soup.find('h1')
+                if not title_element:
+                    return None
+                title = title_element.text.strip()
+                
+                # Extract content
+                content_elements = soup.find_all('p')
+                if not content_elements:
+                    return None
+                content = ' '.join([p.text.strip() for p in content_elements])
+                
+                # Extract publication date from URL first
+                published_date = self.extract_date_from_url(url)
+                
+                # If not found in URL, try to find it in the page
+                if not published_date:
+                    date_element = soup.find('time')
+                    if date_element and date_element.get('datetime'):
+                        try:
+                            published_date = datetime.fromisoformat(date_element['datetime'].replace('Z', '+00:00'))
+                        except ValueError:
+                            # Try alternative date format
+                            try:
+                                date_str = date_element.text.strip()
+                                published_date = datetime.strptime(date_str, '%B %d, %Y')
+                            except ValueError:
+                                pass
+                
+                return {
+                    'title': title,
+                    'content': content,
+                    'url': url,
+                    'published_date': published_date,
+                    'source': 'Fantasy Football Scout'
+                }
+
+        except Exception as e:
+            logger.error(f"Error extracting article data from {url}: {str(e)}")
+            return None
 
     def extract_date_from_url(self, url: str) -> Optional[datetime]:
         """

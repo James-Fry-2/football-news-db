@@ -4,4 +4,5 @@ requests>=2.31.0
 selenium==4.15.2
 python-dotenv==1.0.0
 loguru==0.7.2
-SQLAlchemy==2.0.27 
+SQLAlchemy==2.0.27
+asyncpg==0.29.0 

@@ -21,9 +21,17 @@ class ArticleService:
                 logger.info(f"Duplicate article found: {article_data['url']}")
                 return None
             
+            # Prepare article data with fallback for published_date
+            article_dict = {k: v for k, v in article_data.items() 
+                           if k not in ['teams', 'players']}
+            
+            # Ensure published_date is not None (database constraint)
+            if article_dict.get('published_date') is None:
+                article_dict['published_date'] = datetime.now(timezone.utc)
+                logger.warning(f"No published_date found for article '{article_data.get('title', 'Unknown')}', using current time")
+            
             # Create article
-            article = Article(**{k: v for k, v in article_data.items() 
-                              if k not in ['teams', 'players']})
+            article = Article(**article_dict)
             self.session.add(article)
             
             # Handle team relationships
