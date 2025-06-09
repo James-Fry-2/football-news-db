@@ -6,6 +6,7 @@ import os
 from dotenv import load_dotenv
 from src.db.database import Database
 from src.config.db_config import DATABASE_URL
+from .routes import articles, players, analysis, vector_search
 
 # Load environment variables
 load_dotenv()
@@ -57,6 +58,7 @@ from .routes import articles, players, analysis
 app.include_router(articles.router, prefix="/api/v1/articles", tags=["articles"])
 app.include_router(players.router, prefix="/api/v1/players", tags=["players"])
 app.include_router(analysis.router, prefix="/api/v1/analysis", tags=["analysis"])
+app.include_router(vector_search.router, prefix="/api/v1/vector", tags=["vector-search"])
 
 @app.get("/")
 async def root():

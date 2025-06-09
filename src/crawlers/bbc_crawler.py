@@ -23,16 +23,27 @@ class BBCCrawler(BaseCrawler):
         'Pragma': 'no-cache'
     }
     
-    def __init__(self, article_service: ArticleService = None, db_session: AsyncSession = None):
+    def __init__(self, article_service: ArticleService = None, db_session: AsyncSession = None,
+                 enable_user_agent_rotation: bool = True):
         """
-        Initialize BBC crawler with site-specific headers.
+        Initialize BBC crawler with site-specific headers and user-agent rotation.
         
         Args:
             article_service: Service for saving articles to database
             db_session: Database session for Premier League data
+            enable_user_agent_rotation: Whether to enable user-agent rotation
         """
-        # Initialize base crawler with BBC-specific headers
-        super().__init__(db_session, self.BBC_HEADERS)
+        # Configure user-agent rotation for BBC (conservative approach)
+        ua_config = {
+            'browsers': ['Chrome', 'Firefox', 'Edge'],  # Mainstream browsers for news sites
+            'platforms': ['desktop'],  # BBC works better with desktop UAs
+            'os': ['Windows', 'Mac OS X', 'Linux'],  # Major desktop OS
+            'min_version': 110.0,  # Recent but not bleeding edge
+            'rotation_interval': 8  # Conservative rotation for BBC
+        }
+        
+        # Initialize base crawler with BBC-specific headers and UA rotation
+        super().__init__(db_session, self.BBC_HEADERS, enable_user_agent_rotation, ua_config)
         
         self.article_service = article_service
         self.base_url = "https://www.bbc.co.uk/sport/football"

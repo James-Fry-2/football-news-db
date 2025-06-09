@@ -277,15 +277,29 @@ src/
 
 **Completed Today**:
 - [ x ] Added team names + players to database using script scraping from 
-- [ ] Test Crawler pipeline
+- [  ] Test Crawler pipeline
 - [ ] 
 
 **Date**: 2025-06-06
 **Current Task**: Test uploading articles through pipeline
 
 **Completed Today**:
-- [ ] Test Crawler pipeline
-- [ ] Complete setup of Pinecone
+- [ x ] Test Crawler pipeline
+
+**Date**: 2025-06-07
+**Current Task**: Refine the web scraping base logic
+
+**Completed Today**:
+- [ x ] Test Crawler pipeline
+- [ ] Refine the web scraping base logic
+- [ ] Integrate pinecone + vector service
+
+**Date**: 2025-06-09
+**Current Task**: Refine the web scraping base logic
+
+**Completed Today**:
+- [ ] Refine the web scraping base logic
+- [ ] Integrate pinecone + vector service
 
 **Blockers**:
 - 

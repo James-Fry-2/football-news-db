@@ -1,3 +1,52 @@
+"""
+Enhanced Base Crawler with User-Agent Rotation
+
+This module provides a sophisticated base crawler with automatic user-agent rotation
+using the fake-useragent library for web scraping resilience.
+
+Features:
+- Automatic user-agent rotation from real-world browser statistics
+- Configurable rotation intervals and browser types
+- Support for desktop and mobile user agents
+- Fallback mechanisms for robustness
+- Integration with Premier League data filtering
+
+Example Usage:
+
+    # Basic usage with default user-agent rotation
+    crawler = BaseCrawler(enable_user_agent_rotation=True)
+    
+    # Custom configuration for specific site requirements
+    ua_config = {
+        'browsers': ['Chrome', 'Firefox'],  # Only Chrome and Firefox
+        'platforms': ['desktop'],           # Desktop only
+        'os': ['Windows', 'Mac OS X'],      # Windows and Mac only
+        'min_version': 110.0,               # Recent versions only
+        'rotation_interval': 5              # Rotate every 5 requests
+    }
+    crawler = BaseCrawler(enable_user_agent_rotation=True, ua_config=ua_config)
+    
+    # Site-specific crawler with user-agent rotation
+    bbc_crawler = SiteSpecificCrawler(
+        'bbc', 
+        enable_user_agent_rotation=True,
+        ua_config={'rotation_interval': 3}
+    )
+    
+    # Check user-agent status
+    info = crawler.get_user_agent_info()
+    print(f"Current UA: {info['current_ua']}")
+    print(f"Rotation enabled: {info['rotation_enabled']}")
+
+User-Agent Configuration Options:
+- browsers: List of browser types to use
+- platforms: List of platform types ('desktop', 'mobile', 'tablet')
+- os: List of operating systems
+- min_version: Minimum browser version
+- rotation_interval: Number of requests before rotating (default: 10)
+- fallback: Fallback user-agent string if generation fails
+"""
+
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional
 import logging
@@ -5,6 +54,15 @@ import requests
 import aiohttp
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
+import random
+import time
+
+try:
+    from fake_useragent import UserAgent
+    FAKE_USERAGENT_AVAILABLE = True
+except ImportError:
+    FAKE_USERAGENT_AVAILABLE = False
+    UserAgent = None
 
 from ..data.premier_league_data import PremierLeagueData
 
@@ -14,7 +72,7 @@ class BaseCrawler(ABC):
     """
     Base class for all football news crawlers.
     Provides common functionality including header management, session handling,
-    and Premier League data integration.
+    user-agent rotation, and Premier League data integration.
     """
     #TODO: add a method to keep headers up to date
     # Default headers that work for most news sites
@@ -32,18 +90,37 @@ class BaseCrawler(ABC):
         'Cache-Control': 'max-age=0'
     }
     
-    def __init__(self, db_session: AsyncSession = None, custom_headers: Dict[str, str] = None):
+    def __init__(self, db_session: AsyncSession = None, custom_headers: Dict[str, str] = None, 
+                 enable_user_agent_rotation: bool = True, ua_config: Dict = None):
         """
         Initialize the crawler with database session and optional custom headers.
         
         Args:
             db_session: Database session for Premier League data
             custom_headers: Additional or override headers for this crawler
+            enable_user_agent_rotation: Whether to enable automatic user-agent rotation
+            ua_config: Configuration for fake-useragent (browsers, platforms, os, etc.)
         """
+        # User-agent rotation setup
+        self.enable_user_agent_rotation = enable_user_agent_rotation and FAKE_USERAGENT_AVAILABLE
+        self.ua_config = ua_config or {}
+        self.ua_generator = None
+        self.last_ua_rotation = 0
+        self.ua_rotation_interval = self.ua_config.get('rotation_interval', 10)  # Rotate every 10 requests
+        self.request_count = 0
+        
+        # Initialize fake-useragent if available and enabled
+        if self.enable_user_agent_rotation:
+            self._initialize_user_agent_generator()
+        
         # Build headers by merging defaults with custom headers
         self.headers = self.DEFAULT_HEADERS.copy()
         if custom_headers:
             self.headers.update(custom_headers)
+        
+        # Set initial user-agent if rotation is enabled
+        if self.enable_user_agent_rotation and self.ua_generator:
+            self.headers['User-Agent'] = self._get_fresh_user_agent()
         
         # Set up requests session for synchronous requests
         self.session = requests.Session()
@@ -99,8 +176,113 @@ class BaseCrawler(ABC):
         self.headers.update(new_headers)
         self.session.headers.update(new_headers)
     
+    def _initialize_user_agent_generator(self):
+        """Initialize the fake-useragent generator with custom configuration."""
+        if not FAKE_USERAGENT_AVAILABLE:
+            logger.warning("fake-useragent not available. User-agent rotation disabled.")
+            return
+        
+        try:
+            # Set default configuration optimized for news site scraping
+            default_config = {
+                'browsers': ['Chrome', 'Firefox', 'Edge', 'Safari'],  # Mainstream browsers
+                'platforms': ['desktop', 'mobile'],  # Both desktop and mobile
+                'os': ['Windows', 'Mac OS X', 'Linux', 'Android', 'iOS'],  # Major OS
+                'min_version': 100.0,  # Recent browser versions
+                'fallback': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+            
+            # Merge with user config
+            config = {**default_config, **self.ua_config}
+            
+            # Create UserAgent instance with configuration
+            self.ua_generator = UserAgent(
+                browsers=config.get('browsers'),
+                platforms=config.get('platforms'), 
+                os=config.get('os'),
+                min_version=config.get('min_version'),
+                fallback=config.get('fallback')
+            )
+            
+            logger.info(f"User-agent rotation initialized with config: {config}")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize user-agent generator: {e}")
+            self.ua_generator = None
+            self.enable_user_agent_rotation = False
+    
+    def _get_fresh_user_agent(self) -> str:
+        """Get a fresh user-agent string."""
+        if not self.ua_generator:
+            return self.DEFAULT_HEADERS['User-Agent']
+        
+        try:
+            # Randomly choose between different browser types for variety
+            browser_methods = [
+                lambda: self.ua_generator.random,
+                lambda: self.ua_generator.chrome,
+                lambda: self.ua_generator.firefox,
+                lambda: self.ua_generator.safari,
+                lambda: self.ua_generator.edge,
+            ]
+            
+            # Choose a random method and get user-agent
+            chosen_method = random.choice(browser_methods)
+            user_agent = chosen_method()
+            
+            logger.debug(f"Generated new user-agent: {user_agent}")
+            return user_agent
+            
+        except Exception as e:
+            logger.warning(f"Failed to generate user-agent: {e}. Using fallback.")
+            return self.DEFAULT_HEADERS['User-Agent']
+    
+    def _maybe_rotate_user_agent(self):
+        """Rotate user-agent if rotation is enabled and interval has passed."""
+        if not self.enable_user_agent_rotation:
+            return
+        
+        self.request_count += 1
+        
+        # Check if it's time to rotate
+        if self.request_count % self.ua_rotation_interval == 0:
+            new_ua = self._get_fresh_user_agent()
+            self.update_headers({'User-Agent': new_ua})
+            logger.debug(f"Rotated user-agent after {self.request_count} requests")
+    
+    def get_user_agent_info(self) -> Dict:
+        """Get information about the current user-agent setup."""
+        if not self.ua_generator:
+            return {
+                'rotation_enabled': False,
+                'current_ua': self.headers.get('User-Agent', 'Unknown'),
+                'fake_useragent_available': FAKE_USERAGENT_AVAILABLE
+            }
+        
+        try:
+            # Get detailed info about current UA
+            ua_data = self.ua_generator.getRandom
+            return {
+                'rotation_enabled': self.enable_user_agent_rotation,
+                'current_ua': self.headers.get('User-Agent', 'Unknown'),
+                'request_count': self.request_count,
+                'rotation_interval': self.ua_rotation_interval,
+                'fake_useragent_available': FAKE_USERAGENT_AVAILABLE,
+                'ua_details': ua_data,
+                'config': self.ua_config
+            }
+        except Exception as e:
+            logger.warning(f"Error getting UA info: {e}")
+            return {
+                'rotation_enabled': self.enable_user_agent_rotation,
+                'current_ua': self.headers.get('User-Agent', 'Unknown'),
+                'error': str(e)
+            }
+
     async def get_aiohttp_session(self) -> aiohttp.ClientSession:
-        """Get a properly configured aiohttp session."""
+        """Get a properly configured aiohttp session with potentially rotated user-agent."""
+        # Maybe rotate user-agent before creating session
+        self._maybe_rotate_user_agent()
         return aiohttp.ClientSession(headers=self.headers)
     
     async def initialize_data(self, db_session: AsyncSession = None):
@@ -154,7 +336,7 @@ class BaseCrawler(ABC):
     
     def extract_article_data(self, url: str) -> Optional[Dict]:
         """
-        Extract article data from a URL using sync requests.
+        Extract article data from a URL using sync requests with user-agent rotation.
         
         Args:
             url: The URL of the article
@@ -163,6 +345,9 @@ class BaseCrawler(ABC):
             Dictionary containing article data or None if extraction failed
         """
         try:
+            # Maybe rotate user-agent before making request
+            self._maybe_rotate_user_agent()
+            
             response = self.session.get(url)
             response.raise_for_status()
             
@@ -228,19 +413,22 @@ class SiteSpecificCrawler(BaseCrawler):
         }
     }
     
-    def __init__(self, site_name: str, db_session: AsyncSession = None):
+    def __init__(self, site_name: str, db_session: AsyncSession = None, 
+                 enable_user_agent_rotation: bool = True, ua_config: Dict = None):
         """
         Initialize with site-specific headers.
         
         Args:
             site_name: Name of the site for header customization
             db_session: Database session
+            enable_user_agent_rotation: Whether to enable user-agent rotation
+            ua_config: Configuration for fake-useragent
         """
         # Get custom headers for this site
         custom_headers = self.SITE_HEADERS.get(site_name, {})
         
-        # Initialize base crawler with custom headers
-        super().__init__(db_session, custom_headers)
+        # Initialize base crawler with custom headers and UA rotation
+        super().__init__(db_session, custom_headers, enable_user_agent_rotation, ua_config)
         
         self.site_name = site_name
     

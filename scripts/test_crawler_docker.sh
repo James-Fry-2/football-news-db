@@ -270,7 +270,14 @@ test_full_pipeline() {
 check_database() {
     echo "🔍 Checking database contents..."
     
-    docker-compose exec -T db psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c "
+    # Source environment variables
+    if [[ -f ".env" ]]; then
+        set -a
+        source .env
+        set +a
+    fi
+    
+    docker-compose exec -T db psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-football_news}" -c "
         SELECT 
             'articles' as table_name, 
             COUNT(*) as count 
@@ -292,7 +299,14 @@ check_database() {
 show_recent_articles() {
     echo "📰 Recent articles with relationships:"
     
-    docker-compose exec -T db psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c "
+    # Source environment variables
+    if [[ -f ".env" ]]; then
+        set -a
+        source .env
+        set +a
+    fi
+    
+    docker-compose exec -T db psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-football_news}" -c "
         SELECT 
             a.title,
             a.source,

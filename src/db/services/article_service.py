@@ -48,7 +48,17 @@ class ArticleService:
             
             await self.session.commit()
             await self.session.refresh(article)
-            logger.info(f"Saved new article: {article.title}")
+            try:
+                from src.tasks.vector_tasks import process_single_article_task
+                process_single_article_task.delay(article.id)
+                logger.info(f"📋 Queued article {article.id} for vector processing")
+            except ImportError:
+                # Vector processing not set up yet - gracefully continue
+                logger.debug("Vector processing not available yet")
+            except Exception as e:
+                # Don't fail article saving if queue fails
+                logger.warning(f"Failed to queue article for vector processing: {e}")
+            
             return article
             
         except Exception as e:
