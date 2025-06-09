@@ -1,0 +1,30 @@
+# Minimal Web API requirements (no ML/AI packages)
+
+# Web Framework
+fastapi==0.115.6
+uvicorn==0.32.1
+python-multipart==0.0.12
+httpx==0.28.1
+
+# Database
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.10
+alembic==1.14.0
+asyncpg==0.29.0
+
+# Data Validation and Settings
+pydantic==2.10.3
+pydantic-settings==2.7.0
+python-dotenv==1.0.1
+
+# Basic utilities
+requests==2.32.3
+loguru==0.7.3
+
+# Authentication and Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Background tasks
+celery==5.4.0
+redis==5.2.1 

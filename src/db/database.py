@@ -79,3 +79,21 @@ class Database:
         if cls.engine:
             await cls.engine.dispose()
             logger.info("Closed PostgreSQL connection.")
+
+
+# Convenience function for getting async sessions
+@asynccontextmanager
+async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Get an async database session.
+    
+    This is a convenience wrapper around Database.get_session() that
+    automatically initializes the database connection if needed.
+    """
+    # Auto-initialize database if not connected
+    if not Database.engine:
+        from ..config.db_config import DATABASE_URL
+        await Database.connect_db(DATABASE_URL)
+    
+    async with Database.get_session() as session:
+        yield session

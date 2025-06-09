@@ -298,8 +298,16 @@ src/
 **Current Task**: Refine the web scraping base logic
 
 **Completed Today**:
-- [ ] Refine the web scraping base logic
-- [ ] Integrate pinecone + vector service
+- [ x ] Refine the web scraping base logic
+- [ x ] Integrate pinecone + vector service
+
+**Date**: 2025-06-10
+**Current Task**: Investigate concurrency issue in vector pipeline
+
+**Completed Today**:
+- [  ] Investigate concurrency issue in vector pipeline
+- [  ] Add more webcrawlers
+
 
 **Blockers**:
 - 

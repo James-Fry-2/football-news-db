@@ -80,7 +80,7 @@ VECTOR_DIMENSIONS=1536
 
 Required packages:
 ```bash
-pip install python-dotenv openai pinecone-client
+pip install python-dotenv openai pinecone
 ```
 
 ## Usage

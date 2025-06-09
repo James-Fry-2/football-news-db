@@ -1,0 +1,1 @@
+# Tests for Football News DB Vector Service 

@@ -1,0 +1,29 @@
+# Fast build Dockerfile for development
+FROM python:3.11-slim as base
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set Python environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PIP_NO_CACHE_DIR=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# Copy and install minimal requirements first
+COPY requirements/web_minimal.txt ./
+RUN pip install --no-cache-dir -r web_minimal.txt
+
+# Copy application code
+COPY src/ ./src/
+COPY config/ ./config/
+
+EXPOSE 8000
+
+# Use development server for faster startup
+CMD ["uvicorn", "src.api.app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"] 
