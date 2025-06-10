@@ -310,8 +310,8 @@ class VectorService:
         """
         stats = {"processed": 0, "succeeded": 0, "failed": 0, "messages": []}
         
-        # Process articles with limited concurrency to avoid rate limits
-        semaphore = asyncio.Semaphore(3)  # Limit to 3 concurrent requests
+        # Process articles sequentially to avoid session conflicts
+        semaphore = asyncio.Semaphore(1)  # Sequential processing to prevent database session conflicts
         
         async def process_with_semaphore(article_id: int):
             async with semaphore:
