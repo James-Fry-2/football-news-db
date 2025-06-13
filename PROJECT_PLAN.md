@@ -305,8 +305,28 @@ src/
 **Current Task**: Investigate concurrency issue in vector pipeline
 
 **Completed Today**:
-- [  ] Investigate concurrency issue in vector pipeline
-- [  ] Add more webcrawlers
+- [ x ] Investigate concurrency issue in vector pipeline
+- [ x ] Add more webcrawlers
+
+**Date**: 2025-06-11
+**Current Task**: Add SQL Util making DBs easier to query
+
+**Completed Today**:
+- [ x ] Add SQL Util making DBs easier to query
+
+**Date**: 2025-06-12
+**Current Task**: Add SQL Util making DBs easier to query
+
+**Completed Today**:
+- [ x ] Goal web crawler 
+
+**Date**: 2025-06-13
+**Current Task**: Refine bbc and ffs crawler
+
+**Completed Today**:
+- [ ] BBC web crawler 
+- [ ] FFS web crawler 
+
 
 
 **Blockers**:

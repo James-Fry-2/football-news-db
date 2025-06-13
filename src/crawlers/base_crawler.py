@@ -198,9 +198,6 @@ class BaseCrawler(ABC):
             # Create UserAgent instance with configuration
             self.ua_generator = UserAgent(
                 browsers=config.get('browsers'),
-                platforms=config.get('platforms'), 
-                os=config.get('os'),
-                min_version=config.get('min_version'),
                 fallback=config.get('fallback')
             )
             
@@ -392,54 +389,3 @@ class BaseCrawler(ABC):
         """Clean up resources."""
         if hasattr(self, 'session'):
             self.session.close()
-
-class SiteSpecificCrawler(BaseCrawler):
-    """
-    Example of how to create site-specific crawlers with custom headers.
-    """
-    
-    # Site-specific header overrides
-    SITE_HEADERS = {
-        'bbc': {
-            'Referer': 'https://www.bbc.co.uk/',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-        },
-        'sky_sports': {
-            'Referer': 'https://www.skysports.com/',
-            'X-Requested-With': 'XMLHttpRequest'  # If needed for AJAX requests
-        },
-        'espn': {
-            'Referer': 'https://www.espn.com/',
-        }
-    }
-    
-    def __init__(self, site_name: str, db_session: AsyncSession = None, 
-                 enable_user_agent_rotation: bool = True, ua_config: Dict = None):
-        """
-        Initialize with site-specific headers.
-        
-        Args:
-            site_name: Name of the site for header customization
-            db_session: Database session
-            enable_user_agent_rotation: Whether to enable user-agent rotation
-            ua_config: Configuration for fake-useragent
-        """
-        # Get custom headers for this site
-        custom_headers = self.SITE_HEADERS.get(site_name, {})
-        
-        # Initialize base crawler with custom headers and UA rotation
-        super().__init__(db_session, custom_headers, enable_user_agent_rotation, ua_config)
-        
-        self.site_name = site_name
-    
-    def get_headers_for_site(self, site_name: str = None) -> Dict[str, str]:
-        """Get headers optimized for the specific site."""
-        target_site = site_name or self.site_name
-        
-        headers = self.headers.copy()
-        
-        # Add any additional site-specific headers
-        if target_site in self.SITE_HEADERS:
-            headers.update(self.SITE_HEADERS[target_site])
-        
-        return headers

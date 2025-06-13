@@ -190,7 +190,7 @@ class ManualVectorTester:
         article = articles[0]
         
         try:
-            success, message = await self.service.process_single_article(article.id)
+            success, message = await self.service.process_sinbbgle_article(article.id)
             
             if success:
                 print(f"✅ Article processed: {message}")

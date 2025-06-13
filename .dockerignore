@@ -1,5 +1,9 @@
+# Version control
 .git
 .gitignore
+.github/
+
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -21,4 +25,45 @@ var/
 .installed.cfg
 *.egg
 venv/
-.env 
+.venv/
+.env
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Documentation and markdown (exclude from scraper)
+*.md
+docs/
+
+# Test files and coverage
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+.DS_Store
+Thumbs.db
+
+# Docker files (prevent recursive copying)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Database files
+*.db
+*.sqlite3
+
+# Node modules (if any)
+node_modules/ 

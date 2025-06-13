@@ -2,32 +2,20 @@ import logging
 import sys
 import os
 import argparse
+import asyncio
 from typing import Dict, Type
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-# Import all crawlers
-from src.crawlers.bbc_crawler import BBCCrawler
-from src.crawlers.ffs_crawler import FFSCrawler
-# Import additional crawlers here as they are created
-# from src.crawlers.espn_crawler import ESPNCrawler
-# from src.crawlers.skysports_crawler import SkySportsCrawler
+# Import crawler registry
+from src.crawlers.registry import CRAWLERS, get_crawler_class, get_available_crawlers
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-
-# Dictionary mapping crawler names to their classes
-CRAWLERS: Dict[str, Type] = {
-    'bbc': BBCCrawler,
-    'ffs': FFSCrawler,
-    # Add additional crawlers here as they are created
-    # 'espn': ESPNCrawler,
-    # 'skysports': SkySportsCrawler,
-}
 
 def display_article(article):
     """Display article information in a formatted way."""
@@ -44,27 +32,68 @@ def display_article(article):
         
     print("-" * 80)
 
-def main():
+async def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Test football news crawlers')
-    parser.add_argument('crawler', choices=CRAWLERS.keys(), 
+    parser.add_argument('crawler', choices=get_available_crawlers(), 
                         help='The crawler to test')
     parser.add_argument('--limit', type=int, default=5,
                         help='Maximum number of articles to display (default: 5)')
     parser.add_argument('--verbose', action='store_true',
                         help='Display full article content')
+    parser.add_argument('--headless', action='store_true',
+                        help='Force headless mode (no visible browser)')
+    parser.add_argument('--no-headless', action='store_true',
+                        help='Force non-headless mode (visible browser)')
     
     args = parser.parse_args()
     
     # Get the crawler class
-    crawler_class = CRAWLERS[args.crawler]
+    crawler_class = get_crawler_class(args.crawler)
     
     # Create an instance of the crawler
-    crawler = crawler_class()
+    # Handle special initialization for Goal crawler
+    if args.crawler == 'goal':
+        # Detect if running in Docker/container environment
+        import os
+        is_container = (
+            os.path.exists('/.dockerenv') or 
+            os.environ.get('DOCKER_CONTAINER') == 'true' or
+            os.environ.get('DISPLAY') is None
+        )
+        
+        # Determine headless mode based on arguments and environment
+        if args.headless:
+            headless_mode = True
+        elif args.no_headless:
+            headless_mode = False
+        else:
+            headless_mode = is_container  # Auto-detect based on environment
+        
+        print(f"Running Goal crawler in {'headless' if headless_mode else 'visible browser'} mode")
+        
+        # Goal crawler needs special parameters and works without database in test mode
+        crawler = crawler_class(
+            article_service=None,    # No database service in test mode
+            db_session=None,         # No database session in test mode
+            headless=headless_mode,  # Use determined headless mode
+            max_pages=1              # Limit pages for testing
+        )
+    elif args.crawler == 'goal_requests':
+        # Goal requests crawler needs special parameters
+        crawler = crawler_class(
+            article_service=None,    # No database service in test mode
+            db_session=None,         # No database session in test mode
+            max_pages=1              # Limit pages for testing
+        )
+        print("Running Goal requests crawler (no browser needed)")
+    else:
+        # Other crawlers can be initialized normally
+        crawler = crawler_class()
     
     # Run the crawler
     print(f"Testing {args.crawler.upper()} crawler...")
-    articles = crawler.crawl()
+    articles = await crawler.crawl()  # Add await here
     
     # Display results
     print(f"\nFound {len(articles)} articles:")
@@ -86,4 +115,4 @@ def main():
         print(f"\n... and {len(articles) - args.limit} more articles (use --limit to see more)")
 
 if __name__ == "__main__":
-    main() 
+    asyncio.run(main()) 

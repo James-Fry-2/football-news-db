@@ -2,26 +2,50 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies and Python packages in one layer
 RUN apt-get update && apt-get install -y \
     libpq-dev \
     gcc \
     python3-dev \
     chromium \
     chromium-driver \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements first for better caching
-COPY requirements/base.txt requirements/scraper.txt ./
-RUN pip install --no-cache-dir -r base.txt -r scraper.txt
+    # Playwright system dependencies
+    libnss3 \
+    libatk-bridge2.0-0 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libxss1 \
+    libasound2 \
+    && rm -rf /var/lib/apt/lists/* \
+    # Install Python packages directly
+    && pip install --no-cache-dir \
+        beautifulsoup4==4.12.0 \
+        requests==2.31.0 \
+        python-dotenv==1.0.0 \
+        loguru==0.7.2 \
+        psycopg2-binary==2.9.10 \
+        fastapi==0.104.1 \
+        pydantic==2.4.2 \
+        asyncpg==0.29.0 \
+        SQLAlchemy[asyncio]==2.0.27 \
+        fake-useragent==1.4.0 \
+        aiohttp==3.9.1 \
+        httpx==0.25.2 \
+        playwright>=1.40.0 \
+    # Install Playwright browsers
+    && playwright install chromium --with-deps
 
 # Copy application code
 COPY src/ ./src/
 COPY run_crawler.py .
 
-# Set environment variables for Chrome/Chromium
-ENV CHROME_BIN=/usr/bin/chromium
-ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
+# Set environment variables for Playwright
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
 
 # Add the current directory to PYTHONPATH
-ENV PYTHONPATH=/app 
+ENV PYTHONPATH=/app

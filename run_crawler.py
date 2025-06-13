@@ -10,7 +10,7 @@ import sys
 import asyncio
 from typing import List, Dict
 
-from src.crawlers import BBCCrawler, FFSCrawler
+from src.crawlers.registry import CRAWLERS, get_crawler_class, get_available_crawlers, is_valid_crawler
 from src.db.database import Database
 from src.db.services.article_service import ArticleService
 from src.config.db_config import DATABASE_URL
@@ -27,12 +27,6 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# Map of crawler names to crawler classes
-CRAWLERS = {
-    'bbc': BBCCrawler,
-    'ffs': FFSCrawler,
-}
-
 async def run_crawler(crawler_name: str, limit: int = None) -> List[Dict]:
     """
     Run a crawler and return the collected articles.
@@ -44,9 +38,9 @@ async def run_crawler(crawler_name: str, limit: int = None) -> List[Dict]:
     Returns:
         List of article dictionaries
     """
-    if crawler_name not in CRAWLERS:
+    if not is_valid_crawler(crawler_name):
         logger.error(f"Unknown crawler: {crawler_name}")
-        logger.info(f"Available crawlers: {', '.join(CRAWLERS.keys())}")
+        logger.info(f"Available crawlers: {', '.join(get_available_crawlers())}")
         return []
     
     # Connect to database
@@ -59,8 +53,18 @@ async def run_crawler(crawler_name: str, limit: int = None) -> List[Dict]:
             article_service = ArticleService(session)
             
             # Create crawler instance with database services
-            crawler_class = CRAWLERS[crawler_name]
-            crawler = crawler_class(article_service, session)
+            crawler_class = get_crawler_class(crawler_name)
+            
+            # Enable debugging for Goal crawler
+            if crawler_name == "goal":
+                crawler = crawler_class(
+                    article_service, 
+                    session,
+                    headless=False,  # Makes browser visible for debugging
+                    max_pages=1      # Limit to 1 page for debugging
+                )
+            else:
+                crawler = crawler_class(article_service, session)
             
             logger.info(f"Running {crawler_name} crawler...")
             

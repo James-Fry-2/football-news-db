@@ -1,0 +1,20 @@
+# Scraper-specific optimized requirements (excludes base.txt duplicates)
+# Only install what's actually needed for scraping
+
+# Async database driver (more efficient than psycopg2-binary for async operations)
+asyncpg==0.29.0
+
+# Async SQL toolkit
+SQLAlchemy[asyncio]==2.0.27
+
+# User-agent rotation for scraping
+fake-useragent==1.4.0
+
+# HTTP client optimized for async operations (alternative to requests)
+aiohttp==3.9.1
+
+# Async HTTP client with better connection pooling
+httpx==0.25.2 
+
+# Playwright for JavaScript-heavy sites (Goal.com, etc.)
+playwright>=1.40.0
