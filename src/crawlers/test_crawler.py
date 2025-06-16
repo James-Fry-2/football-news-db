@@ -45,8 +45,26 @@ async def main():
                         help='Force headless mode (no visible browser)')
     parser.add_argument('--no-headless', action='store_true',
                         help='Force non-headless mode (visible browser)')
+    parser.add_argument('--team', type=str,
+                        help='Target specific team (BBC crawler only). Use --list-teams to see available teams')
+    parser.add_argument('--list-teams', action='store_true',
+                        help='List available teams for BBC crawler')
+    parser.add_argument('--max-pages', type=int, default=2,
+                        help='Maximum pages per team for BBC crawler (default: 2)')
     
     args = parser.parse_args()
+    
+    # Handle list teams request
+    if args.list_teams:
+        if args.crawler == 'bbc':
+            from src.crawlers.bbc_crawler import BBCCrawler
+            teams = BBCCrawler.get_available_teams()
+            print("Available teams for BBC crawler:")
+            for slug, name in teams.items():
+                print(f"  {slug} - {name}")
+        else:
+            print(f"Team selection is only available for BBC crawler")
+        return
     
     # Get the crawler class
     crawler_class = get_crawler_class(args.crawler)
@@ -87,6 +105,17 @@ async def main():
             max_pages=1              # Limit pages for testing
         )
         print("Running Goal requests crawler (no browser needed)")
+    elif args.crawler == 'bbc':
+        # BBC crawler with team-specific options
+        if args.team:
+            print(f"Running BBC crawler for team: {args.team}")
+        else:
+            print("Running BBC crawler for all teams")
+        
+        crawler = crawler_class(
+            target_team=args.team,
+            max_pages_per_team=args.max_pages
+        )
     else:
         # Other crawlers can be initialized normally
         crawler = crawler_class()

@@ -5,6 +5,8 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 import aiohttp
+import asyncio
+import re
 
 from .base_crawler import BaseCrawler
 from ..db.services.article_service import ArticleService
@@ -12,7 +14,7 @@ from ..db.services.article_service import ArticleService
 logger = logging.getLogger(__name__)
 
 class BBCCrawler(BaseCrawler):
-    """Crawler for BBC Sport football articles."""
+    """Crawler for BBC Sport football articles with team-specific support."""
     
     # BBC-specific header requirements
     BBC_HEADERS = {
@@ -23,8 +25,33 @@ class BBCCrawler(BaseCrawler):
         'Pragma': 'no-cache'
     }
     
+    # Premier League team URL mappings for BBC Sport
+    TEAM_URLS = {
+        'afc-bournemouth': 'AFC Bournemouth',
+        'arsenal': 'Arsenal',
+        'aston-villa': 'Aston Villa',
+        'brentford': 'Brentford',
+        'brighton-and-hove-albion': 'Brighton & Hove Albion',
+        'burnley': 'Burnley',
+        'chelsea': 'Chelsea',
+        'crystal-palace': 'Crystal Palace',
+        'everton': 'Everton',
+        'fulham': 'Fulham',
+        'leeds-united': 'Leeds United',
+        'liverpool': 'Liverpool',
+        'manchester-city': 'Manchester City',
+        'manchester-united': 'Manchester United',
+        'newcastle-united': 'Newcastle United',
+        'nottingham-forest': 'Nottingham Forest',
+        'sunderland': 'Sunderland',
+        'tottenham-hotspur': 'Tottenham Hotspur',
+        'west-ham-united': 'West Ham United',
+        'wolverhampton-wanderers': 'Wolverhampton Wanderers'
+    }
+    
     def __init__(self, article_service: ArticleService = None, db_session: AsyncSession = None,
-                 enable_user_agent_rotation: bool = True):
+                 enable_user_agent_rotation: bool = True, target_team: str = None, 
+                 max_pages_per_team: int = 3):
         """
         Initialize BBC crawler with site-specific headers and user-agent rotation.
         
@@ -32,6 +59,8 @@ class BBCCrawler(BaseCrawler):
             article_service: Service for saving articles to database
             db_session: Database session for Premier League data
             enable_user_agent_rotation: Whether to enable user-agent rotation
+            target_team: Specific team to crawl (team URL slug), None for all teams
+            max_pages_per_team: Maximum number of pages to crawl per team
         """
         # Configure user-agent rotation for BBC (conservative approach)
         ua_config = {
@@ -48,10 +77,16 @@ class BBCCrawler(BaseCrawler):
         self.article_service = article_service
         self.base_url = "https://www.bbc.co.uk/sport/football"
         self.site_name = "BBC Sport"
-    
+        self.target_team = target_team
+        self.max_pages_per_team = max_pages_per_team
+        
+        # Validate target team if specified
+        if self.target_team and self.target_team not in self.TEAM_URLS:
+            logger.warning(f"Unknown team '{self.target_team}'. Available teams: {list(self.TEAM_URLS.keys())}")
+
     async def fetch_articles(self) -> List[Dict]:
         """
-        Fetch articles from BBC Sport football section.
+        Fetch articles from BBC Sport football section or specific team pages.
         
         Returns:
             List of article dictionaries
@@ -64,39 +99,391 @@ class BBCCrawler(BaseCrawler):
         
         # Use the base crawler's method to get a properly configured session
         async with await self.get_aiohttp_session() as session:
-            try:
-                async with session.get(self.base_url) as response:
-                    if response.status != 200:
-                        logger.error(f"Failed to fetch BBC Sport: {response.status}")
-                        return articles
+            if self.target_team:
+                # Crawl specific team
+                logger.info(f"Crawling BBC Sport for team: {self.TEAM_URLS.get(self.target_team, self.target_team)}")
+                team_articles = await self._crawl_team_pages(session, self.target_team)
+                articles.extend(team_articles)
+            else:
+                # Crawl all teams or general football section
+                logger.info("Crawling BBC Sport for all teams")
+                team_articles = await self._crawl_all_teams(session)
+                articles.extend(team_articles)
+                
+                # Also crawl general football section
+                general_articles = await self._crawl_general_football(session)
+                articles.extend(general_articles)
 
+        logger.info(f"Total articles collected: {len(articles)}")
+        return articles
+
+    async def _crawl_all_teams(self, session: aiohttp.ClientSession) -> List[Dict]:
+        """Crawl all Premier League teams concurrently."""
+        articles = []
+        
+        # Create tasks for all teams
+        tasks = []
+        for team_slug in self.TEAM_URLS.keys():
+            task = self._crawl_team_pages(session, team_slug)
+            tasks.append(task)
+        
+        # Run tasks concurrently with a semaphore to limit concurrent requests
+        semaphore = asyncio.Semaphore(3)  # Limit to 3 concurrent team crawls
+        
+        async def limited_crawl(team_task):
+            async with semaphore:
+                return await team_task
+        
+        # Execute all team crawls
+        team_results = await asyncio.gather(*[limited_crawl(task) for task in tasks], return_exceptions=True)
+        
+        # Collect results
+        for result in team_results:
+            if isinstance(result, Exception):
+                logger.error(f"Error crawling team: {result}")
+            elif isinstance(result, list):
+                articles.extend(result)
+        
+        return articles
+
+    async def _crawl_team_pages(self, session: aiohttp.ClientSession, team_slug: str) -> List[Dict]:
+        """
+        Crawl a specific team's pages with pagination support.
+        
+        Args:
+            session: aiohttp ClientSession
+            team_slug: Team URL slug (e.g., 'arsenal', 'manchester-city')
+            
+        Returns:
+            List of article dictionaries for the team
+        """
+        articles = []
+        team_name = self.TEAM_URLS.get(team_slug, team_slug)
+        
+        for page_num in range(1, self.max_pages_per_team + 1):
+            try:
+                # Construct team page URL
+                if page_num == 1:
+                    team_url = f"https://www.bbc.co.uk/sport/football/teams/{team_slug}"
+                else:
+                    team_url = f"https://www.bbc.co.uk/sport/football/teams/{team_slug}?page={page_num}"
+                
+                logger.info(f"Crawling {team_name} page {page_num}: {team_url}")
+                
+                async with session.get(team_url) as response:
+                    if response.status != 200:
+                        logger.warning(f"HTTP {response.status} for {team_url}")
+                        break  # Stop pagination on error
+                    
                     html = await response.text()
                     soup = BeautifulSoup(html, 'html.parser')
                     
-                    # Find all article links
-                    article_links = self._extract_article_links(soup)
+                    # Extract articles from this page
+                    page_articles = await self._extract_team_page_articles(session, soup, team_name)
                     
-                    # Process each article
-                    for article_url in article_links:
-                        article_data = await self.extract_article_data_async(session, article_url)
-                        if article_data:
-                            # Check if Premier League content
-                            if await self.is_premier_league_content(article_data['content']):
-                                # Extract entities using database data
-                                entities = await self.extract_mentioned_entities(
-                                    f"{article_data['title']} {article_data['content']}"
-                                )
-                                article_data['teams'] = entities['teams']
-                                article_data['players'] = entities['players']
-                                
-                                articles.append(article_data)
-                                logger.info(f"Found Premier League article: {article_data['title']}")
-
+                    if not page_articles:
+                        logger.info(f"No more articles found for {team_name} on page {page_num}")
+                        break  # Stop pagination if no articles found
+                    
+                    articles.extend(page_articles)
+                    logger.info(f"Found {len(page_articles)} articles on {team_name} page {page_num}")
+                    
+                    # Add delay between pages to be respectful
+                    await asyncio.sleep(1)
+                    
             except Exception as e:
-                logger.error(f"Error fetching BBC Sport articles: {e}")
+                logger.error(f"Error crawling {team_name} page {page_num}: {e}")
+                break
+        
+        logger.info(f"Total articles for {team_name}: {len(articles)}")
+        return articles
+
+    async def _extract_team_page_articles(self, session: aiohttp.ClientSession, soup: BeautifulSoup, team_name: str) -> List[Dict]:
+        """
+        Extract articles from a team page, handling both embedded articles and article links.
+        
+        Args:
+            session: aiohttp ClientSession
+            soup: BeautifulSoup object of the team page
+            team_name: Name of the team for context
+            
+        Returns:
+            List of article dictionaries
+        """
+        articles = []
+        
+        # Extract embedded articles first
+        embedded_articles = self._extract_embedded_articles(soup, team_name)
+        articles.extend(embedded_articles)
+        
+        # Extract article links and fetch their content
+        article_links = self._extract_team_page_links(soup)
+        
+        # Process article links
+        for article_url in article_links:
+            article_data = await self.extract_article_data_async(session, article_url)
+            if article_data:
+                # Check if Premier League content
+                if await self.is_premier_league_content(article_data['content']):
+                    # Extract entities using database data
+                    entities = await self.extract_mentioned_entities(
+                        f"{article_data['title']} {article_data['content']}"
+                    )
+                    article_data['teams'] = entities['teams']
+                    article_data['players'] = entities['players']
+                    
+                    articles.append(article_data)
+                    logger.debug(f"Found linked article: {article_data['title']}")
+            
+            # Add small delay between article fetches
+            await asyncio.sleep(0.5)
+        
+        return articles
+
+    def _extract_embedded_articles(self, soup: BeautifulSoup, team_name: str) -> List[Dict]:
+        """
+        Extract embedded articles from team page using the provided HTML structure.
+        
+        Args:
+            soup: BeautifulSoup object of the team page
+            team_name: Name of the team for context
+            
+        Returns:
+            List of embedded article dictionaries
+        """
+        articles = []
+        
+        # Find embedded articles using the provided selector
+        embedded_articles = soup.find_all('article', {'data-testid': 'content-post'})
+        
+        for article_elem in embedded_articles:
+            try:
+                # Extract title
+                title_elem = article_elem.find('h3', class_=re.compile(r'ssrcss-.*-Heading'))
+                if not title_elem:
+                    continue
+                title = title_elem.get_text().strip()
+                
+                # Extract author
+                author_elem = article_elem.find('p', class_=re.compile(r'ssrcss-.*-Contributor'))
+                author = None
+                if author_elem:
+                    author_text = author_elem.get_text().strip()
+                    # Extract just the name (before any line breaks or additional info)
+                    if '\n' in author_text:
+                        author = author_text.split('\n')[0]
+                    else:
+                        author = author_text
+                    # Remove "strong" tags content if present
+                    if author:
+                        author = re.sub(r'<[^>]+>', '', author).strip()
+                
+                # Extract published date
+                published_date = None
+                timestamp_elem = article_elem.find('span', {'data-testid': 'timestamp'})
+                if timestamp_elem:
+                    # Look for accessible timestamp first
+                    accessible_timestamp = timestamp_elem.find('span', {'data-testid': 'accessible-timestamp'})
+                    if accessible_timestamp:
+                        date_text = accessible_timestamp.get_text().strip()
+                        # Parse "published at 19:10 10 June" format
+                        try:
+                            # Extract date part
+                            if 'published at' in date_text:
+                                date_part = date_text.replace('published at', '').strip()
+                                published_date = self._parse_bbc_date(date_part)
+                        except Exception as e:
+                            logger.debug(f"Could not parse date '{date_text}': {e}")
+                
+                # Extract content from paragraphs
+                content_paragraphs = article_elem.find_all('p', class_=re.compile(r'ssrcss-.*-Paragraph'))
+                content_parts = []
+                for p in content_paragraphs:
+                    # Skip contributor paragraphs
+                    if 'Contributor' in p.get('class', [''])[0]:
+                        continue
+                    text = p.get_text().strip()
+                    if text:
+                        content_parts.append(text)
+                
+                content = ' '.join(content_parts)
+                
+                if title and content:
+                    article_data = {
+                        'title': title,
+                        'content': content,
+                        'url': f"embedded_article_{hash(title)}",  # Generate unique identifier
+                        'published_date': published_date,
+                        'source': self.site_name,
+                        'author': author
+                    }
+                    
+                    articles.append(article_data)
+                    logger.debug(f"Extracted embedded article: {title}")
+                
+            except Exception as e:
+                logger.error(f"Error extracting embedded article: {e}")
+                continue
+        
+        return articles
+
+    def _extract_team_page_links(self, soup: BeautifulSoup) -> List[str]:
+        """
+        Extract article links from team page.
+        
+        Args:
+            soup: BeautifulSoup object of the team page
+            
+        Returns:
+            List of article URLs
+        """
+        article_links = []
+        
+        # Look for BBC Sport article links with the pattern /sport/football/articles/
+        article_link_selectors = [
+            'a[href*="/sport/football/articles/"]',
+            'a[href*="/sport/football/"]',
+        ]
+        
+        for selector in article_link_selectors:
+            links = soup.select(selector)
+            for link in links:
+                href = link.get('href', '')
+                if self._is_valid_team_article_link(href):
+                    full_url = self._build_full_url(href)
+                    if full_url not in article_links:
+                        article_links.append(full_url)
+        
+        logger.debug(f"Found {len(article_links)} article links on team page")
+        return article_links
+
+    def _is_valid_team_article_link(self, href: str) -> bool:
+        """
+        Check if a link is a valid BBC Sport football article from team page.
+        
+        Args:
+            href: The href attribute from the link
+            
+        Returns:
+            True if the link appears to be a football article
+        """
+        if not href:
+            return False
+        
+        # Must be a football-related link
+        if '/sport/football/' not in href:
+            return False
+        
+        # Include specific article patterns
+        valid_patterns = [
+            '/sport/football/articles/',  # New article format
+            '/sport/football/[0-9]',      # Legacy article format
+        ]
+        
+        # Check if matches any valid pattern
+        for pattern in valid_patterns:
+            if pattern in href or re.search(pattern.replace('[0-9]', r'\d'), href):
+                return True
+        
+        # Exclude non-article pages
+        exclusions = [
+            '/football/teams/',     # Team directory pages
+            '/football/tables',     # League tables
+            '/football/fixtures',   # Fixture lists
+            '/football/results',    # Results pages
+            '/football/live',       # Live pages
+            '/football#',           # Hash links
+            '/football?',           # Query-only pages
+        ]
+        
+        for exclusion in exclusions:
+            if exclusion in href:
+                return False
+        
+        return False  # Default to false for safety
+
+    def _parse_bbc_date(self, date_text: str) -> Optional[datetime]:
+        """
+        Parse BBC-style date strings.
+        
+        Args:
+            date_text: Date text like "19:10 10 June" or "10 June"
+            
+        Returns:
+            datetime object or None
+        """
+        try:
+            # Remove time if present and get just the date part
+            if ' ' in date_text:
+                parts = date_text.strip().split()
+                if len(parts) >= 2:
+                    # Take last two parts as day and month
+                    day_month = ' '.join(parts[-2:])
+                else:
+                    day_month = date_text
+            else:
+                day_month = date_text
+            
+            # Parse "10 June" format - assume current year
+            current_year = datetime.now().year
+            date_str = f"{day_month} {current_year}"
+            
+            return datetime.strptime(date_str, '%d %B %Y')
+            
+        except Exception as e:
+            logger.debug(f"Could not parse BBC date '{date_text}': {e}")
+            return None
+
+    async def _crawl_general_football(self, session: aiohttp.ClientSession) -> List[Dict]:
+        """
+        Crawl general BBC Sport football section (fallback to original method).
+        
+        Args:
+            session: aiohttp ClientSession
+            
+        Returns:
+            List of article dictionaries
+        """
+        articles = []
+        
+        try:
+            async with session.get(self.base_url) as response:
+                if response.status != 200:
+                    logger.error(f"Failed to fetch BBC Sport: {response.status}")
+                    return articles
+
+                html = await response.text()
+                soup = BeautifulSoup(html, 'html.parser')
+                
+                # Find all article links
+                article_links = self._extract_article_links(soup)
+                
+                # Process each article
+                for article_url in article_links:
+                    article_data = await self.extract_article_data_async(session, article_url)
+                    if article_data:
+                        # Check if Premier League content
+                        if await self.is_premier_league_content(article_data['content']):
+                            # Extract entities using database data
+                            entities = await self.extract_mentioned_entities(
+                                f"{article_data['title']} {article_data['content']}"
+                            )
+                            article_data['teams'] = entities['teams']
+                            article_data['players'] = entities['players']
+                            
+                            articles.append(article_data)
+                            logger.info(f"Found Premier League article: {article_data['title']}")
+
+        except Exception as e:
+            logger.error(f"Error fetching BBC Sport articles: {e}")
 
         return articles
-    
+
+    @classmethod
+    def get_available_teams(cls) -> Dict[str, str]:
+        """Get available team slugs and names."""
+        return cls.TEAM_URLS.copy()
+
     def _extract_article_links(self, soup: BeautifulSoup) -> List[str]:
         """
         Extract article URLs from BBC Sport homepage.

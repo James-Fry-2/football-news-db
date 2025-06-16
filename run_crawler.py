@@ -27,13 +27,15 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-async def run_crawler(crawler_name: str, limit: int = None) -> List[Dict]:
+async def run_crawler(crawler_name: str, limit: int = None, target_team: str = None, max_pages: int = 3) -> List[Dict]:
     """
     Run a crawler and return the collected articles.
     
     Args:
         crawler_name: Name of the crawler to run
         limit: Maximum number of articles to collect (None for no limit)
+        target_team: Specific team to crawl (BBC only)
+        max_pages: Maximum pages per team (BBC only)
         
     Returns:
         List of article dictionaries
@@ -62,6 +64,16 @@ async def run_crawler(crawler_name: str, limit: int = None) -> List[Dict]:
                     session,
                     headless=False,  # Makes browser visible for debugging
                     max_pages=1      # Limit to 1 page for debugging
+                )
+            elif crawler_name == "bbc":
+                # BBC crawler with team-specific options
+                if target_team:
+                    logger.info(f"Targeting specific team: {target_team}")
+                crawler = crawler_class(
+                    article_service,
+                    session,
+                    target_team=target_team,
+                    max_pages_per_team=max_pages
                 )
             else:
                 crawler = crawler_class(article_service, session)
@@ -95,13 +107,35 @@ async def run_crawler(crawler_name: str, limit: int = None) -> List[Dict]:
 async def main():
     """Main function to parse arguments and run the crawler."""
     parser = argparse.ArgumentParser(description="Run a crawler and save data to PostgreSQL")
-    parser.add_argument("crawler", help="Name of the crawler to run")
+    parser.add_argument("crawler", nargs='?', help="Name of the crawler to run")
     parser.add_argument("--limit", type=int, help="Maximum number of articles to collect")
+    parser.add_argument("--team", type=str, help="Target specific team (BBC crawler only). Use --list-teams to see available teams")
+    parser.add_argument("--list-teams", action="store_true", help="List available teams for BBC crawler")
+    parser.add_argument("--max-pages", type=int, default=3, help="Maximum pages per team for BBC crawler (default: 3)")
     
     args = parser.parse_args()
     
+    # Handle list teams request
+    if args.list_teams:
+        # Default to BBC if no crawler specified with --list-teams
+        crawler_name = args.crawler or 'bbc'
+        if crawler_name == 'bbc':
+            from src.crawlers.bbc_crawler import BBCCrawler
+            teams = BBCCrawler.get_available_teams()
+            print("Available teams for BBC crawler:")
+            for slug, name in teams.items():
+                print(f"  {slug} - {name}")
+            print(f"\nUsage: python run_crawler.py bbc --team {list(teams.keys())[0]}")
+        else:
+            print(f"Team selection is only available for BBC crawler")
+        return
+    
+    # Validate that crawler is provided for non-list operations
+    if not args.crawler:
+        parser.error("crawler argument is required unless using --list-teams")
+    
     # Run the crawler (it will automatically save to database)
-    articles = await run_crawler(args.crawler, args.limit)
+    articles = await run_crawler(args.crawler, args.limit, args.team, args.max_pages)
     
     logger.info(f"Process completed. {len(articles)} articles processed.")
 
