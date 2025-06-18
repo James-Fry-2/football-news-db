@@ -46,6 +46,8 @@ COPY run_crawler.py .
 # Set environment variables for Playwright
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 ENV PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
+ENV DISPLAY=:99
+ENV PLAYWRIGHT_HEADLESS=true
 
 # Add the current directory to PYTHONPATH
 ENV PYTHONPATH=/app

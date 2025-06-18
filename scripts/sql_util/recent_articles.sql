@@ -15,7 +15,9 @@ SELECT
         ELSE NULL 
     END as sentiment_score,
     url
+    --content
+
 FROM article 
 WHERE is_deleted = false
 ORDER BY created_at DESC
-LIMIT 5; 
+LIMIT 20; 

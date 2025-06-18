@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 import asyncio
 import re
+import os
 
 try:
     from playwright.async_api import async_playwright, Browser, Page
@@ -52,9 +53,20 @@ class GoalNewsPlaywrightCrawler(BaseCrawler):
         self.article_service = article_service
         self.base_url = "https://www.goal.com/en-gb/premier-league"
         self.news_base_url = "https://www.goal.com/en-gb/premier-league/news"
+        self.player_ratings_base_url = "https://www.goal.com/en-gb/category/player-ratings"
+        self.transfers_base_url = "https://www.goal.com/en-gb/category/transfers"
         self.site_name = "Goal News"
         self.max_pages = max_pages
-        self.headless = headless
+        
+        # Force headless mode if environment variable is set (Docker compatibility)
+        env_headless = os.getenv('PLAYWRIGHT_HEADLESS', '').lower() in ('true', '1', 'yes')
+        if env_headless:
+            self.headless = True
+            logger.info("Forcing headless mode due to PLAYWRIGHT_HEADLESS environment variable")
+        else:
+            self.headless = headless
+        
+        logger.info(f"Goal crawler initialized with headless={self.headless}")
         
         # Track processed URLs to avoid duplicates
         self.processed_urls = set()
@@ -67,6 +79,9 @@ class GoalNewsPlaywrightCrawler(BaseCrawler):
         """Setup Playwright browser and context."""
         try:
             self.playwright = await async_playwright().start()
+            
+            # Log headless mode for debugging
+            logger.info(f"Launching browser in headless mode: {self.headless}")
             
             # Launch browser with optimized settings for scraping
             self.browser = await self.playwright.chromium.launch(
@@ -158,37 +173,47 @@ class GoalNewsPlaywrightCrawler(BaseCrawler):
             # main_page_articles = await self._fetch_page_articles_playwright(page, self.base_url)
             # articles.extend(main_page_articles)
             
-            # Fetch articles from paginated news section
-            for page_num in range(1, self.max_pages + 1):
-                # Try different URL patterns for Goal.com news
-                url_patterns = [
-                    f"{self.news_base_url}/{page_num}/2kwbbcootiqqgmrzs6o5inle5",  # Original pattern
-                    f"{self.news_base_url}?page={page_num}",                      # Query parameter pattern
-                    f"{self.news_base_url}/page/{page_num}",                      # Page path pattern
-                    f"{self.news_base_url}",                                      # Just the base news URL
-                ]
+            # Fetch articles from news, player-ratings, and transfers sections
+            sections_to_crawl = [
+                ("news", f"{self.news_base_url}/{{}}/2kwbbcootiqqgmrzs6o5inle5"),
+                ("player-ratings", f"{self.player_ratings_base_url}/{{}}/blt9e3963966f918671"),
+                ("transfers", f"{self.transfers_base_url}/{{}}/k94w8e1yy9ch14mllpf4srnks")
+            ]
+            
+            for section_name, url_template in sections_to_crawl:
+                logger.info(f"Crawling {section_name} section...")
                 
-                for i, page_url in enumerate(url_patterns):
-                    logger.info(f"Trying Goal.com news URL pattern {i+1}: {page_url}")
+                for page_num in range(1, self.max_pages + 1):
+                    # Try different URL patterns for Goal.com sections
+                    url_patterns = [
+                        url_template.format(page_num),  # Main pattern
+                    ]
                     
-                    page_articles = await self._fetch_page_articles_playwright(page, page_url)
+                    page_articles = []
+                    for i, page_url in enumerate(url_patterns):
+                        logger.info(f"Trying Goal.com {section_name} URL pattern {i+1}: {page_url}")
+                        
+                        page_articles = await self._fetch_page_articles_playwright(page, page_url)
+                        if page_articles:
+                            articles.extend(page_articles)
+                            logger.info(f"Found {len(page_articles)} articles with {section_name} URL pattern {i+1}")
+                            break  # Success with this pattern, break inner loop
+                        else:
+                            logger.info(f"No articles found with {section_name} URL pattern {i+1}")
+                            if i < len(url_patterns) - 1:
+                                await asyncio.sleep(1)  # Brief pause between pattern attempts
+                    
+                    # If we found articles with any pattern, continue to next page
                     if page_articles:
-                        articles.extend(page_articles)
-                        logger.info(f"Found {len(page_articles)} articles with URL pattern {i+1}")
-                        break  # Success with this pattern, break inner loop
+                        logger.info(f"Found {len(page_articles)} new articles on {section_name} page {page_num}")
+                        # Add delay between pages
+                        await asyncio.sleep(2)
                     else:
-                        logger.info(f"No articles found with URL pattern {i+1}")
-                        if i < len(url_patterns) - 1:
-                            await asyncio.sleep(1)  # Brief pause between pattern attempts
+                        logger.info(f"No articles found on {section_name} page {page_num} with any URL pattern")
+                        # Try next page anyway, might just be a gap
                 
-                # If we found articles with any pattern, continue to next page
-                if page_articles:
-                    logger.info(f"Found {len(page_articles)} new articles on page {page_num}")
-                    # Add delay between pages
-                    await asyncio.sleep(2)
-                else:
-                    logger.info(f"No articles found on page {page_num} with any URL pattern")
-                    # Try next page anyway, might just be a gap
+                # Add delay between sections
+                await asyncio.sleep(1)
             
             await page.close()
             
@@ -443,65 +468,91 @@ class GoalNewsPlaywrightCrawler(BaseCrawler):
         
         return unique_links
     
-    async def _extract_article_data_playwright(self, page: Page, url: str) -> Optional[Dict]:
+    async def _extract_article_data_playwright(self, page: Page, url: str, max_retries: int = 3) -> Optional[Dict]:
         """
-        Extract article data using Playwright for JavaScript-rendered content.
+        Extract article data using Playwright for JavaScript-rendered content with retry logic.
         
         Args:
             page: Playwright Page instance
             url: Article URL
+            max_retries: Maximum number of retry attempts (default: 3)
             
         Returns:
             Dictionary containing article data or None if extraction failed
         """
-        try:
-            clean_url = url.split('#')[0]
-            
-            # Navigate to article page
-            await page.goto(clean_url, wait_until='networkidle', timeout=30000)
-            
-            # Wait for article content to load
+        clean_url = url.split('#')[0]
+        
+        for attempt in range(max_retries + 1):
             try:
-                await page.wait_for_selector('h1, .article-title, [data-testid="headline"]', timeout=10000)
-            except Exception:
-                logger.debug(f"Article title not found immediately for {clean_url}")
-                await asyncio.sleep(2)  # Give it more time
-            
-            # Get rendered HTML
-            html = await page.content()
-            soup = BeautifulSoup(html, 'html.parser')
-            
-            # Extract article components
-            title = self._extract_title(soup)
-            if not title:
-                logger.debug(f"No title found for {clean_url}")
-                return None
-            
-            content = self._extract_content(soup)
-            if not content or len(content.strip()) < 100:
-                logger.debug(f"Insufficient content for {clean_url}")
-                return None
-            
-            published_date = self._extract_published_date(soup)
-            author = self._extract_author(soup)
-            
-            # Validate we have meaningful data
-            if len(title.strip()) < 10:
-                logger.debug(f"Title too short for {clean_url}")
-                return None
-            
-            return {
-                'url': clean_url,
-                'title': title.strip(),
-                'content': content.strip(),
-                'published_date': published_date,
-                'source': self.site_name,
-                'author': author
-            }
-            
-        except Exception as e:
-            logger.error(f"Error extracting article data from {url}: {e}")
-            return None
+                # Calculate timeout with exponential backoff
+                timeout = 30000 + (attempt * 15000)  # 30s, 45s, 60s, 75s
+                
+                if attempt > 0:
+                    logger.info(f"Retry attempt {attempt}/{max_retries} for {clean_url}")
+                    # Wait before retry with exponential backoff
+                    wait_time = 2 ** attempt  # 2s, 4s, 8s
+                    await asyncio.sleep(wait_time)
+                
+                # Navigate to article page with increased timeout on retries
+                await page.goto(clean_url, wait_until='networkidle', timeout=timeout)
+                
+                # Wait for article content to load
+                try:
+                    await page.wait_for_selector('h1, .article-title, [data-testid="headline"]', timeout=10000)
+                except Exception:
+                    logger.debug(f"Article title not found immediately for {clean_url}")
+                    await asyncio.sleep(2)  # Give it more time
+                
+                # Get rendered HTML
+                html = await page.content()
+                soup = BeautifulSoup(html, 'html.parser')
+                
+                # Extract article components
+                title = self._extract_title(soup)
+                if not title:
+                    logger.debug(f"No title found for {clean_url}")
+                    return None
+                
+                content = self._extract_content(soup)
+                if not content or len(content.strip()) < 100:
+                    logger.debug(f"Insufficient content for {clean_url}")
+                    return None
+                
+                published_date = self._extract_published_date(soup)
+                author = self._extract_author(soup)
+                
+                # Validate we have meaningful data
+                if len(title.strip()) < 10:
+                    logger.debug(f"Title too short for {clean_url}")
+                    return None
+                
+                # Success - return the extracted data
+                logger.debug(f"Successfully extracted article data for {clean_url} on attempt {attempt + 1}")
+                return {
+                    'url': clean_url,
+                    'title': title.strip(),
+                    'content': content.strip(),
+                    'published_date': published_date,
+                    'source': self.site_name,
+                    'author': author
+                }
+                
+            except Exception as e:
+                error_message = str(e)
+                is_timeout = 'timeout' in error_message.lower() or 'exceeded' in error_message.lower()
+                is_network_error = any(term in error_message.lower() for term in ['network', 'connection', 'dns', 'resolve'])
+                
+                if attempt < max_retries and (is_timeout or is_network_error):
+                    logger.warning(f"Retryable error on attempt {attempt + 1}/{max_retries + 1} for {clean_url}: {e}")
+                    continue
+                else:
+                    # Final attempt failed or non-retryable error
+                    logger.error(f"Failed to extract article data from {url} after {attempt + 1} attempts: {e}")
+                    return None
+        
+        # Should not reach here, but just in case
+        logger.error(f"Exhausted all retry attempts for {url}")
+        return None
     
     def _is_valid_article_link(self, href: str) -> bool:
         """Check if a link is a valid Goal.com article."""
@@ -510,9 +561,13 @@ class GoalNewsPlaywrightCrawler(BaseCrawler):
         
         href_lower = href.lower()
         
-        # Goal.com specific patterns
+        # Goal.com specific patterns - include both lists and player-ratings content
         goal_patterns = [
-            '/en-gb/lists/',
+            '/en-gb/lists/',          # Original lists pattern
+            '/lists/',                # Alternative lists pattern
+            '/en-gb/news/',           # News articles
+            '/news/',                 # Alternative news pattern
+            '/blt',                   # Goal.com article ID pattern
         ]
         
         has_goal_pattern = any(pattern in href_lower for pattern in goal_patterns)

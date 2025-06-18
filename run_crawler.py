@@ -57,14 +57,8 @@ async def run_crawler(crawler_name: str, limit: int = None, target_team: str = N
             # Create crawler instance with database services
             crawler_class = get_crawler_class(crawler_name)
             
-            # Enable debugging for Goal crawler
             if crawler_name == "goal":
-                crawler = crawler_class(
-                    article_service, 
-                    session,
-                    headless=False,  # Makes browser visible for debugging
-                    max_pages=1      # Limit to 1 page for debugging
-                )
+                crawler = crawler_class(article_service, session, headless=True)
             elif crawler_name == "bbc":
                 # BBC crawler with team-specific options
                 if target_team:

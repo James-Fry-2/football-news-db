@@ -231,7 +231,7 @@ src/
 ## SUCCESS METRICS
 
 ### Phase 1 Success:
-- [ ] 1000+ articles embedded in Pinecone
+- [ x ] 1000+ articles embedded in Pinecone
 - [ ] Semantic search returns relevant results
 - [ ] API response time <500ms
 
@@ -324,10 +324,37 @@ src/
 **Current Task**: Refine bbc and ffs crawler
 
 **Completed Today**:
-- [ ] BBC web crawler 
-- [ ] FFS web crawler 
+- [ x ] BBC web crawler 
+- [ x ] FFS web crawler 
+
+**Date**: 2025-06-13
+**Current Task**: Tests all crawlers at scale
+
+**Completed Today**:
+- [ x ] BBC web crawler 
+- [ x ] FFS web crawler 
+
+**Phase 2 plan**
+- Create `/semantic-search` endpoint
+- Add filtering by source, date, teams
+- Implement relevance scoring
+- Add search result ranking
+
+Success Criteria:
+ [ ] API endpoint returns ranked, relevant articles
+ [ ] Search filters work correctly
+ [ ] Response includes metadata (sentiment, teams mentioned)
 
 
+# Minimal chat functionality
+- LangChain + OpenAI integration
+- Basic football analysis tools
+- Simple question-answering over articles
+- Context-aware responses
+
+ [ ] Can answer questions like "What's the latest on Manchester United transfers?"
+ [ ] Responses cite relevant articles
+ [ ] Basic football knowledge integration
 
 **Blockers**:
 - 

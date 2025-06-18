@@ -100,13 +100,24 @@ class BBCCrawler(BaseCrawler):
         # Use the base crawler's method to get a properly configured session
         async with await self.get_aiohttp_session() as session:
             if self.target_team:
-                # Crawl specific team
-                logger.info(f"Crawling BBC Sport for team: {self.TEAM_URLS.get(self.target_team, self.target_team)}")
-                team_articles = await self._crawl_team_pages(session, self.target_team)
-                articles.extend(team_articles)
+                # Get current Premier League teams to validate target team
+                premier_league_teams = await self._get_premier_league_teams(session)
+                
+                if self.target_team in premier_league_teams:
+                    # Crawl specific Premier League team
+                    team_name = premier_league_teams[self.target_team]
+                    logger.info(f"Crawling BBC Sport for Premier League team: {team_name}")
+                    team_articles = await self._crawl_team_pages(session, self.target_team, premier_league_teams)
+                    articles.extend(team_articles)
+                else:
+                    logger.warning(f"Team '{self.target_team}' is not in the current Premier League. Available teams: {list(premier_league_teams.keys())}")
+                    # Still try to crawl it in case it's a valid team URL
+                    logger.info(f"Attempting to crawl '{self.target_team}' anyway...")
+                    team_articles = await self._crawl_team_pages(session, self.target_team)
+                    articles.extend(team_articles)
             else:
-                # Crawl all teams or general football section
-                logger.info("Crawling BBC Sport for all teams")
+                # Crawl all Premier League teams
+                logger.info("Crawling BBC Sport for all Premier League teams")
                 team_articles = await self._crawl_all_teams(session)
                 articles.extend(team_articles)
                 
@@ -121,10 +132,13 @@ class BBCCrawler(BaseCrawler):
         """Crawl all Premier League teams concurrently."""
         articles = []
         
-        # Create tasks for all teams
+        # Get current Premier League teams dynamically
+        premier_league_teams = await self._get_premier_league_teams(session)
+        
+        # Create tasks for all Premier League teams
         tasks = []
-        for team_slug in self.TEAM_URLS.keys():
-            task = self._crawl_team_pages(session, team_slug)
+        for team_slug in premier_league_teams.keys():
+            task = self._crawl_team_pages(session, team_slug, premier_league_teams)
             tasks.append(task)
         
         # Run tasks concurrently with a semaphore to limit concurrent requests
@@ -146,19 +160,22 @@ class BBCCrawler(BaseCrawler):
         
         return articles
 
-    async def _crawl_team_pages(self, session: aiohttp.ClientSession, team_slug: str) -> List[Dict]:
+    async def _crawl_team_pages(self, session: aiohttp.ClientSession, team_slug: str, team_names: Dict[str, str] = None) -> List[Dict]:
         """
         Crawl a specific team's pages with pagination support.
         
         Args:
             session: aiohttp ClientSession
             team_slug: Team URL slug (e.g., 'arsenal', 'manchester-city')
+            team_names: Dictionary of team names (optional, uses TEAM_URLS as fallback)
             
         Returns:
             List of article dictionaries for the team
         """
         articles = []
-        team_name = self.TEAM_URLS.get(team_slug, team_slug)
+        # Use provided team names or fallback to static mapping
+        team_name_mapping = team_names or self.TEAM_URLS
+        team_name = team_name_mapping.get(team_slug, team_slug)
         
         for page_num in range(1, self.max_pages_per_team + 1):
             try:
@@ -216,7 +233,7 @@ class BBCCrawler(BaseCrawler):
         embedded_articles = self._extract_embedded_articles(soup, team_name)
         articles.extend(embedded_articles)
         
-        # Extract article links and fetch their content
+        # Extract article links and fetch their content (including links from embedded articles)
         article_links = self._extract_team_page_links(soup)
         
         # Process article links
@@ -258,14 +275,40 @@ class BBCCrawler(BaseCrawler):
         
         for article_elem in embedded_articles:
             try:
-                # Extract title
-                title_elem = article_elem.find('h3', class_=re.compile(r'ssrcss-.*-Heading'))
-                if not title_elem:
+                # Check if this embedded article has a link at the bottom - if so, skip it
+                article_links = article_elem.find_all('a', class_=re.compile(r'.*InlineLink.*'))
+                if article_links:
+                    # Skip this embedded article as we'll scrape the link instead
+                    logger.debug("Skipping embedded article with link - will scrape link instead")
                     continue
-                title = title_elem.get_text().strip()
                 
-                # Extract author
-                author_elem = article_elem.find('p', class_=re.compile(r'ssrcss-.*-Contributor'))
+                # Extract title - get the span with role="text" and extract only the first span (title)
+                title_container = article_elem.find('span', {'role': 'text'})
+                if not title_container:
+                    continue
+                
+                # Get the first span which contains the actual title (excluding timestamp)
+                title_spans = title_container.find_all('span', recursive=False)
+                if not title_spans:
+                    continue
+                
+                title = title_spans[0].get_text().strip()
+                
+                # Extract published date from accessible-timestamp
+                published_date = None
+                accessible_timestamp = article_elem.find('span', {'data-testid': 'accessible-timestamp'})
+                if accessible_timestamp:
+                    date_text = accessible_timestamp.get_text().strip()
+                    try:
+                        # Parse "published at 09:22 16 June" format
+                        if 'published at' in date_text:
+                            date_part = date_text.replace('published at', '').strip()
+                            published_date = self._parse_bbc_date(date_part)
+                    except Exception as e:
+                        logger.debug(f"Could not parse date '{date_text}': {e}")
+                
+                # Extract author - look for "Contributor" in class name
+                author_elem = article_elem.find(attrs={'class': re.compile(r'.*Contributor.*')})
                 author = None
                 if author_elem:
                     author_text = author_elem.get_text().strip()
@@ -278,29 +321,12 @@ class BBCCrawler(BaseCrawler):
                     if author:
                         author = re.sub(r'<[^>]+>', '', author).strip()
                 
-                # Extract published date
-                published_date = None
-                timestamp_elem = article_elem.find('span', {'data-testid': 'timestamp'})
-                if timestamp_elem:
-                    # Look for accessible timestamp first
-                    accessible_timestamp = timestamp_elem.find('span', {'data-testid': 'accessible-timestamp'})
-                    if accessible_timestamp:
-                        date_text = accessible_timestamp.get_text().strip()
-                        # Parse "published at 19:10 10 June" format
-                        try:
-                            # Extract date part
-                            if 'published at' in date_text:
-                                date_part = date_text.replace('published at', '').strip()
-                                published_date = self._parse_bbc_date(date_part)
-                        except Exception as e:
-                            logger.debug(f"Could not parse date '{date_text}': {e}")
-                
                 # Extract content from paragraphs
                 content_paragraphs = article_elem.find_all('p', class_=re.compile(r'ssrcss-.*-Paragraph'))
                 content_parts = []
                 for p in content_paragraphs:
                     # Skip contributor paragraphs
-                    if 'Contributor' in p.get('class', [''])[0]:
+                    if 'Contributor' in ' '.join(p.get('class', [])):
                         continue
                     text = p.get_text().strip()
                     if text:
@@ -308,7 +334,8 @@ class BBCCrawler(BaseCrawler):
                 
                 content = ' '.join(content_parts)
                 
-                if title and content:
+                # Ensure we have a clean title and content
+                if title and content and len(title) > 0:
                     article_data = {
                         'title': title,
                         'content': content,
@@ -329,7 +356,7 @@ class BBCCrawler(BaseCrawler):
 
     def _extract_team_page_links(self, soup: BeautifulSoup) -> List[str]:
         """
-        Extract article links from team page.
+        Extract article links from team page, including links from embedded articles.
         
         Args:
             soup: BeautifulSoup object of the team page
@@ -339,7 +366,19 @@ class BBCCrawler(BaseCrawler):
         """
         article_links = []
         
-        # Look for BBC Sport article links with the pattern /sport/football/articles/
+        # First, extract links from embedded articles that have InlineLink elements
+        embedded_articles = soup.find_all('article', {'data-testid': 'content-post'})
+        for article_elem in embedded_articles:
+            inline_links = article_elem.find_all('a', class_=re.compile(r'.*InlineLink.*'))
+            for link in inline_links:
+                href = link.get('href', '')
+                if self._is_valid_team_article_link(href):
+                    full_url = self._build_full_url(href)
+                    if full_url not in article_links:
+                        article_links.append(full_url)
+                        logger.debug(f"Found embedded article link: {full_url}")
+        
+        # Then look for other BBC Sport article links
         article_link_selectors = [
             'a[href*="/sport/football/articles/"]',
             'a[href*="/sport/football/"]',
@@ -374,6 +413,10 @@ class BBCCrawler(BaseCrawler):
         if '/sport/football/' not in href:
             return False
         
+        # Exclude URLs with fragments (e.g., #comments)
+        if '#' in href:
+            return False
+        
         # Include specific article patterns
         valid_patterns = [
             '/sport/football/articles/',  # New article format
@@ -392,7 +435,6 @@ class BBCCrawler(BaseCrawler):
             '/football/fixtures',   # Fixture lists
             '/football/results',    # Results pages
             '/football/live',       # Live pages
-            '/football#',           # Hash links
             '/football?',           # Query-only pages
         ]
         
@@ -407,13 +449,25 @@ class BBCCrawler(BaseCrawler):
         Parse BBC-style date strings.
         
         Args:
-            date_text: Date text like "19:10 10 June" or "10 June"
+            date_text: Date text like "19:10 10 June", "10 June", or just "19:10" (today)
             
         Returns:
             datetime object or None
         """
         try:
-            # Remove time if present and get just the date part
+            date_text = date_text.strip()
+            
+            # Check if it's just a time (like "19:10" or "06:54") - meaning today
+            time_only_pattern = r'^\d{1,2}:\d{2}$'
+            if re.match(time_only_pattern, date_text):
+                # Parse as today's date with the given time
+                today = datetime.now().date()
+                time_parts = date_text.split(':')
+                hour = int(time_parts[0])
+                minute = int(time_parts[1])
+                return datetime.combine(today, datetime.min.time().replace(hour=hour, minute=minute))
+            
+            # Handle full date with time: "19:10 10 June"
             if ' ' in date_text:
                 parts = date_text.strip().split()
                 if len(parts) >= 2:
@@ -533,9 +587,12 @@ class BBCCrawler(BaseCrawler):
         if '/sport/football/' not in href:
             return False
         
+        # Exclude URLs with fragments (e.g., #comments)
+        if '#' in href:
+            return False
+        
         # Exclude certain types of pages
         exclusions = [
-            '/football#',  # Hash links
             '/football?',  # Query parameters without articles
             '/football/tables',  # League tables
             '/football/fixtures',  # Fixture lists
@@ -553,14 +610,18 @@ class BBCCrawler(BaseCrawler):
     
     def _build_full_url(self, href: str) -> str:
         """
-        Build full URL from href.
+        Build full URL from href and strip any fragments.
         
         Args:
             href: Relative or absolute URL
             
         Returns:
-            Full URL
+            Full URL without fragments
         """
+        # Strip fragment (everything after #) first
+        if '#' in href:
+            href = href.split('#')[0]
+        
         if href.startswith('http'):
             return href
         elif href.startswith('/'):
@@ -580,9 +641,12 @@ class BBCCrawler(BaseCrawler):
             Dictionary containing article data or None if extraction failed
         """
         try:
-            async with session.get(url) as response:
+            # Strip URL fragment before making request and storing
+            clean_url = url.split('#')[0] if '#' in url else url
+            
+            async with session.get(clean_url) as response:
                 if response.status != 200:
-                    logger.warning(f"HTTP {response.status} for {url}")
+                    logger.warning(f"HTTP {response.status} for {clean_url}")
                     return None
 
                 html = await response.text()
@@ -595,11 +659,11 @@ class BBCCrawler(BaseCrawler):
                 author = self._extract_author(soup)
                 
                 if not all([title, content]):
-                    logger.warning(f"Missing essential data for {url}")
+                    logger.warning(f"Missing essential data for {clean_url}")
                     return None
                 
                 return {
-                    'url': url,
+                    'url': clean_url,
                     'title': title,
                     'content': content,
                     'published_date': published_date,
@@ -681,6 +745,9 @@ class BBCCrawler(BaseCrawler):
     def _extract_author(self, soup: BeautifulSoup) -> Optional[str]:
         """Extract article author."""
         selectors = [
+            # New BBC byline format with TextContributorName class
+            '[class*="TextContributorName"]',
+            # Other existing selectors
             '[data-testid="byline"] span',
             '.byline',
             '.author',
@@ -698,3 +765,60 @@ class BBCCrawler(BaseCrawler):
     async def crawl(self) -> List[Dict]:
         """Crawl method for compatibility with test scripts."""
         return await self.fetch_articles()
+
+    async def _get_premier_league_teams(self, session: aiohttp.ClientSession) -> Dict[str, str]:
+        """
+        Dynamically extract Premier League teams from BBC Sport Premier League page.
+        
+        Args:
+            session: aiohttp ClientSession
+            
+        Returns:
+            Dictionary mapping team URL slugs to team names for Premier League teams only
+        """
+        premier_league_teams = {}
+        premier_league_url = "https://www.bbc.co.uk/sport/football/premier-league"
+        
+        try:
+            async with session.get(premier_league_url) as response:
+                if response.status != 200:
+                    logger.error(f"Failed to fetch BBC Premier League page: {response.status}")
+                    return self.TEAM_URLS  # Fallback to static list
+                
+                html = await response.text()
+                soup = BeautifulSoup(html, 'html.parser')
+                
+                # Look for team links in the format: /sport/football/teams/{team}
+                team_links = soup.find_all('a', href=re.compile(r'^/sport/football/teams/[^/]+$'))
+                
+                for link in team_links:
+                    href = link.get('href', '')
+                    
+                    # Extract team name from the link text
+                    # Look for PromoHeadline or just get the text content
+                    team_name_elem = link.find(class_=re.compile(r'.*PromoHeadline.*'))
+                    if team_name_elem:
+                        team_name = team_name_elem.get_text().strip()
+                    else:
+                        # Fallback to getting all text from the link
+                        team_name = link.get_text().strip()
+                    
+                    # Extract team slug from URL: /sport/football/teams/arsenal -> arsenal
+                    if '/sport/football/teams/' in href:
+                        team_slug = href.split('/sport/football/teams/')[-1]
+                        if team_name and team_slug:
+                            premier_league_teams[team_slug] = team_name
+                            logger.debug(f"Found Premier League team: {team_slug} -> {team_name}")
+                
+                logger.info(f"Extracted {len(premier_league_teams)} Premier League teams from BBC Premier League page")
+                
+                # If we didn't find any teams, fall back to static list
+                if not premier_league_teams:
+                    logger.warning("No Premier League teams found, using static fallback list")
+                    return self.TEAM_URLS
+                
+                return premier_league_teams
+                
+        except Exception as e:
+            logger.error(f"Error extracting Premier League teams: {e}")
+            return self.TEAM_URLS  # Fallback to static list

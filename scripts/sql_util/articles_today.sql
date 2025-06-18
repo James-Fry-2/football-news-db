@@ -15,7 +15,7 @@ SELECT
         ELSE NULL 
     END as sentiment_score
 FROM article 
-WHERE DATE(created_at) = CURRENT_DATE
+WHERE DATE(created_at) = CURRENT_DATE-1
     AND is_deleted = false
 ORDER BY created_at DESC;
 

@@ -13,8 +13,7 @@ from .goal_crawler_requests import GoalNewsRequestsCrawler
 CRAWLERS: Dict[str, Type] = {
     'bbc': BBCCrawler,
     'ffs': FFSCrawler,
-    'goal': GoalNewsPlaywrightCrawler,
-    'goal_requests': GoalNewsRequestsCrawler,
+    'goal': GoalNewsPlaywrightCrawler
 }
 
 def get_crawler_class(name: str):
