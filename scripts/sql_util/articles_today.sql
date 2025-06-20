@@ -15,7 +15,8 @@ SELECT
         ELSE NULL 
     END as sentiment_score
 FROM article 
-WHERE DATE(created_at) = CURRENT_DATE-1
+WHERE DATE(created_at) = CURRENT_DATE
+--and url like '%cn86lynd28vo%'
     AND is_deleted = false
 ORDER BY created_at DESC;
 

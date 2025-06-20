@@ -9,7 +9,7 @@ from src.api.schemas import Article, ArticleCreate, ArticleUpdate
 router = APIRouter()
 
 async def get_db():
-    async for session in Database.get_session():
+    async with Database.get_session() as session:
         yield session
 
 @router.get("/", response_model=List[Article])
@@ -41,6 +41,35 @@ async def get_article(
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
     return article
+
+@router.get("/id/{article_id}/content")
+async def get_article_content(
+    article_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Extract article content by ID"""
+    try:
+        query = select(ArticleModel.content, ArticleModel.title, ArticleModel.url, ArticleModel.source, ArticleModel.published_date).where(
+            ArticleModel.id == article_id,
+            ArticleModel.is_deleted == False,
+            ArticleModel.status == 'active'
+        )
+        result = await db.execute(query)
+        article_data = result.first()
+        
+        if not article_data:
+            raise HTTPException(status_code=404, detail=f"Article with ID {article_id} not found or not active")
+        
+        return {
+            "id": article_id,
+            "content": article_data.content,
+            "title": article_data.title,
+            "url": str(article_data.url),
+            "source": article_data.source,
+            "published_date": article_data.published_date
+        }
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid article ID format. Must be an integer.")
 
 @router.post("/", response_model=Article)
 async def create_article(

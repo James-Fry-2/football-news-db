@@ -4,6 +4,7 @@ from src.db.database import Database
 from src.db.services.vector_service import VectorService
 from pydantic import BaseModel
 from typing import List, Optional, Dict
+from datetime import datetime, timezone, timedelta
 
 router = APIRouter()
 
@@ -12,6 +13,7 @@ class SemanticSearchRequest(BaseModel):
     top_k: int = 5
     source_filter: Optional[str] = None
     sentiment_filter: Optional[str] = None  # positive, negative, neutral
+    days_since_published: Optional[int] = None  # Filter articles from last N days
 
 class SearchResult(BaseModel):
     id: str
@@ -30,7 +32,7 @@ class ProcessingStats(BaseModel):
     total: int
 
 async def get_db():
-    async for session in Database.get_session():
+    async with Database.get_session() as session:
         yield session
 
 @router.post("/semantic-search", response_model=List[SearchResult])
@@ -55,12 +57,20 @@ async def semantic_search(
             elif request.sentiment_filter == "neutral":
                 filter_dict["sentiment"] = {"$gte": -0.1, "$lte": 0.1}
         
+        # Add date filter if specified
+        if request.days_since_published is not None and request.days_since_published > 0:
+            # Calculate the cutoff date (N days ago)
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=request.days_since_published)
+            # Convert to ISO format string to match how it's stored in Pinecone metadata
+            cutoff_date_iso = cutoff_date.isoformat()
+            filter_dict["published_date"] = {"$gte": cutoff_date_iso}
+        
         results = await vector_service.semantic_search(
             query=request.query,
             top_k=request.top_k,
             filter_dict=filter_dict if filter_dict else None
         )
-        
+           
         # Format results
         formatted_results = []
         for result in results:

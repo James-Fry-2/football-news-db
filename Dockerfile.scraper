@@ -20,6 +20,17 @@ RUN apt-get update && apt-get install -y \
     libgbm1 \
     libxss1 \
     libasound2 \
+    # Additional Playwright dependencies
+    libxtst6 \
+    libxi6 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libcups2 \
+    libxfixes3 \
+    libatk1.0-0 \
+    libcairo2 \
+    libgtk-3-0 \
+    libgdk-pixbuf2.0-0 \
     && rm -rf /var/lib/apt/lists/* \
     # Install Python packages directly
     && pip install --no-cache-dir \
@@ -35,16 +46,15 @@ RUN apt-get update && apt-get install -y \
         fake-useragent==1.4.0 \
         aiohttp==3.9.1 \
         httpx==0.25.2 \
-        playwright>=1.40.0 \
+        playwright==1.40.0 \
     # Install Playwright browsers
-    && playwright install chromium --with-deps
+    && playwright install --with-deps chromium
 
 # Copy application code
 COPY src/ ./src/
-COPY run_crawler.py .
 
 # Set environment variables for Playwright
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
 ENV PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
 ENV DISPLAY=:99
 ENV PLAYWRIGHT_HEADLESS=true

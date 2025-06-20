@@ -232,7 +232,7 @@ src/
 
 ### Phase 1 Success:
 - [ x ] 1000+ articles embedded in Pinecone
-- [ ] Semantic search returns relevant results
+- [ x ] Semantic search returns relevant results
 - [ ] API response time <500ms
 
 ### Phase 2 Success:
@@ -334,7 +334,7 @@ src/
 - [ x ] BBC web crawler 
 - [ x ] FFS web crawler 
 
-**Phase 2 plan**
+### **Phase 2 plan**
 - Create `/semantic-search` endpoint
 - Add filtering by source, date, teams
 - Implement relevance scoring
@@ -344,6 +344,9 @@ Success Criteria:
  [ ] API endpoint returns ranked, relevant articles
  [ ] Search filters work correctly
  [ ] Response includes metadata (sentiment, teams mentioned)
+ [ ] Improve performance of goal crawler. 
+       Check for most recent article
+    Wait for article to load
 
 
 # Minimal chat functionality
@@ -355,6 +358,23 @@ Success Criteria:
  [ ] Can answer questions like "What's the latest on Manchester United transfers?"
  [ ] Responses cite relevant articles
  [ ] Basic football knowledge integration
+
+
+**Date**: 2025-06-19
+**Current Task**: `/semantic-search` endpoint
+
+**Completed Today**:
+[ x ] Create `/semantic-search` endpoint
+[ x ] Add filtering by source, date, teams
+
+
+**Date**: 2025-06-20
+**Current Task**: Tests all crawlers at scale
+
+**Completed Today**:
+[ ] Add filtering by source, date, teams
+
+
 
 **Blockers**:
 - 
@@ -407,15 +427,6 @@ PINECONE_ENV=us-east1-gcp
 DATABASE_URL=postgresql://...
 REDIS_URL=redis://localhost:6379
 ```
-
----
-
-## DAILY STANDUP TEMPLATE
-
-**Yesterday**: What did I complete?
-**Today**: What will I work on?  
-**Blockers**: What's preventing progress?
-**Focus**: What's the most important task?
 
 ---
 
