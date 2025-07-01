@@ -12,12 +12,12 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy minimal web requirements for faster build
-COPY requirements/web_minimal.txt ./requirements/
+# Copy web requirements with AI/ML dependencies
+COPY requirements/web.txt ./requirements/
 
 # Install dependencies with optimizations
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements/web_minimal.txt
+    pip install --no-cache-dir -r requirements/web.txt
 
 # Copy application code
 COPY src/ ./src/

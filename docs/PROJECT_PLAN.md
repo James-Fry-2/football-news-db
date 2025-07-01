@@ -341,9 +341,9 @@ src/
 - Add search result ranking
 
 Success Criteria:
- [ ] API endpoint returns ranked, relevant articles
- [ ] Search filters work correctly
- [ ] Response includes metadata (sentiment, teams mentioned)
+ [x] API endpoint returns ranked, relevant articles
+ [x] Search filters work correctly
+ [x] Response includes metadata (sentiment, teams mentioned)
  [ ] Improve performance of goal crawler. 
        Check for most recent article
     Wait for article to load
@@ -355,10 +355,9 @@ Success Criteria:
 - Simple question-answering over articles
 - Context-aware responses
 
- [ ] Can answer questions like "What's the latest on Manchester United transfers?"
- [ ] Responses cite relevant articles
- [ ] Basic football knowledge integration
-
+ [x] Can answer questions like "What's the latest on Manchester United transfers?"
+ [x] Responses cite relevant articles
+ [x] Basic football knowledge integration
 
 **Date**: 2025-06-19
 **Current Task**: `/semantic-search` endpoint
@@ -372,7 +371,61 @@ Success Criteria:
 **Current Task**: Tests all crawlers at scale
 
 **Completed Today**:
-[ ] Add filtering by source, date, teams
+[ x ] Add filtering by source, date, teams
+
+
+**Date**: 2025-06-21
+**Current Task**: Build very basic chat with news sources integrated
+
+**Completed Today**:
+[ x ] Build very basic chat with news sources integrated
+
+
+
+
+
+# Enchanced chat functionality
+- Implement response caching (70% cost reduction goal)
+- Add rate limiting (50 queries/day for free users)
+- Monitor API costs and usage patterns
+- Add conversation persistence with Redis
+- Test concurrent WebSocket connections
+- Add error recovery and fallbacks
+
+
+# Frontend chat interface
+- Create React chat interface with WebSocket connection
+- Implement real-time message streaming
+- Add typing indicators and message history
+- Mobile-responsive design
+- Message formatting (markdown support)
+
+
+**Date**: 2025-06-29
+**Current Task**: Response caching
+
+**Completed Today**:
+[ x ] Implement response caching (70% cost reduction goal)
+
+**Date**: 2025-06-30
+**Current Task**: Langchain
+
+**Completed Today**:
+[ x ] Set up a langchain account and intergrate with chat
+
+
+**Date**: 2025-06-30
+**Current Task**: Tidy up model teaks - put in seperate config file 
+
+**Completed Today**:
+[ x ] Tidy up model teaks - put in seperate config file 
+[ ] Create React chat interface with WebSocket connection
+
+
+
+
+
+
 
 
 
