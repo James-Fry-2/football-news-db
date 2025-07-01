@@ -1,13 +1,14 @@
 from typing import List, Dict, Optional, Tuple
 import math
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from loguru import logger
 
 from ..models.article import Article
 from .vector_service import VectorService
+from ...config.search_config import SearchConfig
 
 class EnhancedSearchService:
     """
@@ -18,6 +19,7 @@ class EnhancedSearchService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.vector_service = VectorService(session)
+        self.config = SearchConfig()
         
     async def enhanced_semantic_search(self,
                                      query: str,
@@ -120,17 +122,21 @@ class EnhancedSearchService:
     
     async def _semantic_only_scoring(self, results: List[Dict]) -> List[Dict]:
         """Use only semantic similarity scores."""
+        weights = self.config.SCORING_WEIGHTS["semantic_only"]
         for result in results:
-            result["final_score"] = result["semantic_score"]
+            semantic_score = result["semantic_score"]
+            final_score = semantic_score * weights["semantic"]
+            
+            result["final_score"] = final_score
             result["score_breakdown"] = {
-                "semantic": result["semantic_score"],
-                "total": result["semantic_score"]
+                "semantic": semantic_score,
+                "total": final_score
             }
         return results
     
     async def _temporal_relevance_scoring(self, results: List[Dict], query: str) -> List[Dict]:
         """Boost recent articles and apply time decay."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         for result in results:
             article = result["article_data"]
@@ -138,20 +144,27 @@ class EnhancedSearchService:
             
             # Calculate time decay (newer articles get higher scores)
             if article["published_date"]:
-                days_old = (now - article["published_date"]).days
+                # Ensure both datetimes are timezone-aware for comparison
+                published_date = article["published_date"]
+                if published_date.tzinfo is None:
+                    # If timezone-naive, assume UTC
+                    published_date = published_date.replace(tzinfo=timezone.utc)
+                
+                days_old = (now - published_date).days
                 # Exponential decay: score = base * e^(-decay_rate * days)
-                time_decay = math.exp(-0.1 * days_old)  # Decay rate of 0.1
+                time_decay = math.exp(-self.config.TEMPORAL_DECAY_RATE * days_old)
             else:
-                time_decay = 0.5  # Default for articles without dates
+                time_decay = self.config.DEFAULT_TIME_DECAY
             
             # Text relevance boost
             text_boost = self._calculate_text_relevance_boost(query, article)
             
             # Final score combining semantic, temporal, and text relevance
+            weights = self.config.SCORING_WEIGHTS["temporal"]
             final_score = (
-                semantic_score * 0.6 +          # 60% semantic similarity
-                time_decay * 0.3 +              # 30% temporal relevance
-                text_boost * 0.1                # 10% text matching
+                semantic_score * weights["semantic"] +
+                time_decay * weights["temporal"] +
+                text_boost * weights["text_relevance"]
             )
             
             result["final_score"] = final_score
@@ -167,22 +180,15 @@ class EnhancedSearchService:
     async def _engagement_scoring(self, results: List[Dict], query: str) -> List[Dict]:
         """Score based on source credibility and content quality signals."""
         
-        # Source credibility weights
-        source_weights = {
-            "BBC Sport": 1.0,
-            "Sky Sports": 0.95,
-            "Guardian": 0.95,
-            "Telegraph": 0.9,
-            "Fantasy Football Scout": 0.85,
-            "ESPN": 0.8,
-        }
-        
         for result in results:
             article = result["article_data"]
             semantic_score = result["semantic_score"]
             
             # Source credibility score
-            source_score = source_weights.get(article["source"], 0.7)
+            source_score = self.config.SOURCE_WEIGHTS.get(
+                article["source"], 
+                self.config.DEFAULT_SOURCE_WEIGHT
+            )
             
             # Content quality indicators
             content_quality = self._calculate_content_quality_score(article)
@@ -194,12 +200,13 @@ class EnhancedSearchService:
             sentiment_boost = self._calculate_sentiment_relevance(article)
             
             # Combined score
+            weights = self.config.SCORING_WEIGHTS["engagement"]
             final_score = (
-                semantic_score * 0.5 +          # 50% semantic similarity
-                source_score * 0.2 +            # 20% source credibility
-                content_quality * 0.15 +        # 15% content quality
-                text_boost * 0.1 +              # 10% text matching
-                sentiment_boost * 0.05          # 5% sentiment relevance
+                semantic_score * weights["semantic"] +
+                source_score * weights["source_credibility"] +
+                content_quality * weights["content_quality"] +
+                text_boost * weights["text_relevance"] +
+                sentiment_boost * weights["sentiment"]
             )
             
             result["final_score"] = final_score
@@ -216,17 +223,7 @@ class EnhancedSearchService:
     
     async def _hybrid_relevance_scoring(self, results: List[Dict], query: str) -> List[Dict]:
         """Advanced hybrid scoring combining multiple factors."""
-        now = datetime.utcnow()
-        
-        # Source credibility weights
-        source_weights = {
-            "BBC Sport": 1.0,
-            "Sky Sports": 0.95,
-            "Guardian": 0.95,
-            "Telegraph": 0.9,
-            "Fantasy Football Scout": 0.85,
-            "ESPN": 0.8,
-        }
+        now = datetime.now(timezone.utc)
         
         for result in results:
             article = result["article_data"]
@@ -234,13 +231,22 @@ class EnhancedSearchService:
             
             # 1. Temporal relevance (exponential decay)
             if article["published_date"]:
-                days_old = (now - article["published_date"]).days
-                time_decay = math.exp(-0.05 * days_old)  # Slower decay for hybrid
+                # Ensure both datetimes are timezone-aware for comparison
+                published_date = article["published_date"]
+                if published_date.tzinfo is None:
+                    # If timezone-naive, assume UTC
+                    published_date = published_date.replace(tzinfo=timezone.utc)
+                
+                days_old = (now - published_date).days
+                time_decay = math.exp(-self.config.HYBRID_DECAY_RATE * days_old)
             else:
-                time_decay = 0.5
+                time_decay = self.config.DEFAULT_TIME_DECAY
             
             # 2. Source credibility
-            source_score = source_weights.get(article["source"], 0.7)
+            source_score = self.config.SOURCE_WEIGHTS.get(
+                article["source"], 
+                self.config.DEFAULT_SOURCE_WEIGHT
+            )
             
             # 3. Text relevance boost
             text_boost = self._calculate_text_relevance_boost(query, article)
@@ -252,13 +258,14 @@ class EnhancedSearchService:
             sentiment_boost = self._calculate_sentiment_relevance(article)
             
             # Hybrid scoring formula
+            weights = self.config.SCORING_WEIGHTS["hybrid"]
             final_score = (
-                semantic_score * 0.4 +          # 40% semantic similarity
-                time_decay * 0.25 +             # 25% temporal relevance
-                source_score * 0.15 +           # 15% source credibility
-                text_boost * 0.1 +              # 10% text matching
-                content_quality * 0.07 +        # 7% content quality
-                sentiment_boost * 0.03          # 3% sentiment relevance
+                semantic_score * weights["semantic"] +
+                time_decay * weights["temporal"] +
+                source_score * weights["source_credibility"] +
+                text_boost * weights["text_relevance"] +
+                content_quality * weights["content_quality"] +
+                sentiment_boost * weights["sentiment"]
             )
             
             result["final_score"] = final_score
@@ -282,7 +289,7 @@ class EnhancedSearchService:
         
         # Count matches in title (weighted higher)
         title_matches = sum(1 for term in query_terms if term in title_text)
-        title_boost = (title_matches / len(query_terms)) * 2.0  # 2x weight for title
+        title_boost = (title_matches / len(query_terms)) * self.config.TITLE_MATCH_WEIGHT
         
         # Count matches in content
         content_matches = sum(1 for term in query_terms if term in content_text)
@@ -297,32 +304,29 @@ class EnhancedSearchService:
         content = article.get("content", "")
         title = article.get("title", "")
         
-        # Content length (sweet spot around 500-2000 chars)
+        # Content length (sweet spot around configured range)
         content_length = len(content)
-        if 500 <= content_length <= 2000:
+        min_len = self.config.OPTIMAL_CONTENT_LENGTH_MIN
+        max_len = self.config.OPTIMAL_CONTENT_LENGTH_MAX
+        
+        if min_len <= content_length <= max_len:
             length_score = 1.0
-        elif content_length < 500:
-            length_score = content_length / 500.0
+        elif content_length < min_len:
+            length_score = content_length / min_len
         else:
-            length_score = max(0.5, 2000 / content_length)
+            length_score = max(0.5, max_len / content_length)
         
         # Title quality (reasonable length, not clickbait indicators)
         title_length = len(title)
         title_score = 1.0
-        if title_length < 20 or title_length > 150:
+        if (title_length < self.config.MIN_TITLE_LENGTH or 
+            title_length > self.config.MAX_TITLE_LENGTH):
             title_score = 0.8
         
         # Check for clickbait patterns (lower score)
-        clickbait_patterns = [
-            r"\d+\s+(things|ways|reasons|facts)",
-            r"you won't believe",
-            r"shocking",
-            r"amazing",
-            r"incredible"
-        ]
-        for pattern in clickbait_patterns:
+        for pattern in self.config.CLICKBAIT_PATTERNS:
             if re.search(pattern, title.lower()):
-                title_score *= 0.7
+                title_score *= self.config.CLICKBAIT_PENALTY
                 break
         
         return (length_score + title_score) / 2.0
@@ -332,10 +336,12 @@ class EnhancedSearchService:
         sentiment_score = article.get("sentiment_score", 0.0)
         
         if sentiment_score is None:
-            return 0.5  # Neutral default
+            return self.config.NEUTRAL_SENTIMENT_BASE
         
         # Slightly favor neutral to positive articles
         if sentiment_score >= 0:
-            return 0.5 + (sentiment_score * 0.3)  # 0.5 to 0.8 range
+            return (self.config.NEUTRAL_SENTIMENT_BASE + 
+                   (sentiment_score * self.config.POSITIVE_SENTIMENT_MULTIPLIER))
         else:
-            return 0.5 + (sentiment_score * 0.2)  # 0.3 to 0.5 range
+            return (self.config.NEUTRAL_SENTIMENT_BASE + 
+                   (sentiment_score * self.config.NEGATIVE_SENTIMENT_MULTIPLIER))

@@ -7,7 +7,7 @@ and extract article links that are dynamically loaded.
 
 from bs4 import BeautifulSoup
 from typing import List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
@@ -754,20 +754,35 @@ class GoalNewsPlaywrightCrawler(BaseCrawler):
             if '+' in clean_string and clean_string.count(':') >= 2:
                 clean_string = clean_string.split('+')[0].strip()
             
-            if clean_string.endswith('Z'):
-                clean_string = clean_string[:-1]
-            
+            # Handle ISO format with 'Z' timezone indicator  
             if 'T' in clean_string:
                 try:
                     if '.' in clean_string:
                         clean_string = clean_string.split('.')[0]
-                    return datetime.fromisoformat(clean_string)
+                    
+                    # If string ends with 'Z', replace with +00:00 for proper timezone parsing
+                    if clean_string.endswith('Z'):
+                        clean_string = clean_string[:-1] + '+00:00'
+                        return datetime.fromisoformat(clean_string)
+                    else:
+                        # Try direct fromisoformat first
+                        try:
+                            return datetime.fromisoformat(clean_string)
+                        except ValueError:
+                            # If no timezone info, assume UTC
+                            parsed_dt = datetime.fromisoformat(clean_string)
+                            return parsed_dt.replace(tzinfo=timezone.utc)
                 except ValueError:
                     pass
             
+            # Try other date formats
             for date_format in formats_to_try:
                 try:
-                    return datetime.strptime(clean_string, date_format)
+                    parsed_dt = datetime.strptime(clean_string, date_format)
+                    # If no timezone info, assume UTC
+                    if parsed_dt.tzinfo is None:
+                        parsed_dt = parsed_dt.replace(tzinfo=timezone.utc)
+                    return parsed_dt
                 except ValueError:
                     continue
                     
