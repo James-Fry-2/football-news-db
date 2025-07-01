@@ -1,0 +1,1 @@
+export const AnalyticsPage = () => <div>Analytics Page</div>; 

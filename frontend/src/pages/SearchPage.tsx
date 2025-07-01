@@ -1,0 +1,1 @@
+export const SearchPage = () => <div>Search Page</div>; 

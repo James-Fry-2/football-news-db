@@ -1,0 +1,1 @@
+export const AdminPage = () => <div>Admin Page</div>; 
