@@ -95,13 +95,52 @@ export const useWebSocketChat = (options: ChatHookOptions = {}): UseChatReturn =
 
     // Message listeners
     const handleChatMessage = (message: WebSocketMessage) => {
-      // Skip empty messages and system messages
-      if (!message.content || message.content.trim() === '' || 
-          message.type === 'ping' || message.type === 'pong' || message.type === 'system') {
+      console.log('📨 Received WebSocket message:', message);
+      
+      // Extract content from either 'content' or 'message' field
+      const messageContent = message.content || message.message || '';
+      
+      // More permissive filtering - only skip truly empty or system messages
+      if (!message || 
+          !messageContent || 
+          messageContent.trim() === '' ||
+          message.type === 'ping' || 
+          message.type === 'pong') {
+        console.log('⏭️ Skipping message due to content/type filter:', message);
         return;
       }
 
-      setMessages(prev => [...prev, message]);
+      // Create a better message ID that includes content hash to prevent duplicates
+      const contentHash = btoa(messageContent.substring(0, 50)).replace(/[+/=]/g, '');
+      const messageId = message.id || `${message.type}-${Date.now()}-${contentHash}`;
+
+      // Generate processed message
+      const processedMessage = {
+        ...message,
+        id: messageId,
+        timestamp: message.timestamp || new Date().toISOString(),
+        sender: message.sender || 'assistant', // Default to assistant for server messages
+        content: messageContent, // Ensure we always use the correct content
+      };
+
+      console.log('✅ Adding processed message to state:', processedMessage);
+      
+      setMessages(prev => {
+        // Prevent duplicate messages - check for both ID and content similarity
+        const existingMessage = prev.find(m => 
+          m.id === processedMessage.id || 
+          (m.content === processedMessage.content && m.sender === processedMessage.sender)
+        );
+        
+        if (existingMessage) {
+          console.log('🔄 Duplicate message detected, skipping:', processedMessage.id);
+          return prev;
+        }
+        
+        const newMessages = [...prev, processedMessage];
+        console.log('📋 Updated messages array length:', newMessages.length);
+        return newMessages;
+      });
       
       // Invalidate conversation queries
       if (message.conversation_id) {
@@ -149,13 +188,29 @@ export const useWebSocketChat = (options: ChatHookOptions = {}): UseChatReturn =
       }));
     };
 
-    // Register event listeners
+    const cacheHitListener = (data: any) => console.log('💾 Cache hit:', data);
+    const cacheMissListener = (data: any) => console.log('💾 Cache miss:', data);
+    const noCacheListener = (data: any) => console.log('💾 No cache:', data);
+    
+    // Register event listeners - prioritize final_response to avoid duplicates
     ws.onStatusChange(handleStatusChange);
-    ws.on('chat_message', handleChatMessage);
+    ws.on('final_response', handleChatMessage); // Primary listener for complete server responses
+    // ws.on('chat_message', handleChatMessage); // Commenting out to prevent duplicates
+    ws.on('cache_hit', cacheHitListener);
+    ws.on('cache_miss', cacheMissListener);
+    ws.on('no_cache', noCacheListener);
     ws.on('token', handleToken);
     ws.on('typing', handleTyping);
     ws.on('message_complete', handleMessageComplete);
     ws.on('error', handleError);
+
+    // Add a generic listener to catch all events for debugging
+    if (process.env.NODE_ENV === 'development') {
+      const debugListener = (data: any) => {
+        console.log('🎯 WebSocket event received:', data);
+      };
+      ws.on('*', debugListener);
+    }
 
     // Initial status
     setConnectionStatus(ws.getConnectionStatus());
@@ -163,7 +218,11 @@ export const useWebSocketChat = (options: ChatHookOptions = {}): UseChatReturn =
     return () => {
       // Cleanup listeners
       ws.offStatusChange(handleStatusChange);
-      ws.off('chat_message', handleChatMessage);
+      ws.off('final_response', handleChatMessage);
+      // ws.off('chat_message', handleChatMessage); // Corresponding cleanup for commented listener
+      ws.off('cache_hit', cacheHitListener);
+      ws.off('cache_miss', cacheMissListener);
+      ws.off('no_cache', noCacheListener);
       ws.off('token', handleToken);
       ws.off('typing', handleTyping);
       ws.off('message_complete', handleMessageComplete);
@@ -294,12 +353,8 @@ export const useConversationMessages = (conversationId?: string) => {
     async () => {
       if (!conversationId) return [];
       
-      // Fetch conversation history from API
-      const response = await fetch(`/api/v1/chat/conversations/${conversationId}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch conversation');
-      }
-      return response.json();
+      const { chatService } = await import('../services/chatService');
+      return await chatService.getConversation(conversationId);
     },
     {
       enabled: !!conversationId,
@@ -314,14 +369,8 @@ export const useConversations = (userId?: string) => {
   return useQuery(
     ['conversations', userId],
     async () => {
-      const params = new URLSearchParams();
-      if (userId) params.append('user_id', userId);
-      
-      const response = await fetch(`/api/v1/chat/conversations?${params.toString()}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch conversations');
-      }
-      return response.json();
+      const { chatService } = await import('../services/chatService');
+      return await chatService.listConversations(userId);
     },
     {
       staleTime: 1000 * 60 * 2, // 2 minutes

@@ -1,12 +1,15 @@
 // WebSocket message types
 export interface WebSocketMessage {
-  type: 'message_received' | 'typing' | 'token' | 'message_complete' | 'error' | 'chunk' | 'system' | 'ping' | 'pong';
+  type: 'message_received' | 'typing' | 'token' | 'message_complete' | 'error' | 'chunk' | 'system' | 'ping' | 'pong' | 'final_response' | 'cache_hit' | 'cache_miss' | 'no_cache';
   content?: string;
   conversation_id?: string;
   timestamp?: string;
   metadata?: Record<string, any>;
   sender?: 'user' | 'assistant';
   id?: string;
+  message?: string; // Some server messages use 'message' instead of 'content'
+  category?: string;
+  ttl_hours?: number;
 }
 
 export interface ChatMessage {
@@ -315,14 +318,16 @@ export class WebSocketService {
    * Handle incoming WebSocket message
    */
   private handleMessage(data: WebSocketMessage): void {
-    this.log('Received message:', data);
+    this.log('🔄 Raw incoming message:', data);
     
-    // Skip empty messages and ping/pong
-    if (!data.content || data.content.trim() === '' || data.type === 'ping' || data.type === 'pong') {
+    // Don't filter out messages too aggressively - let the hook decide
+    if (data.type === 'ping' || data.type === 'pong') {
+      this.log('⏭️ Skipping ping/pong message');
       return;
     }
     
-    // Emit to generic message listeners
+    // Always emit to listeners for debugging and processing
+    this.log('📤 Emitting message to listeners');
     this.emitToListeners('message', data);
     this.emitToListeners('chat_message', data);
 
@@ -343,6 +348,26 @@ export class WebSocketService {
         break;
       case 'message_received':
         this.emitToListeners('message_received', data);
+        break;
+      case 'final_response':
+        // This is the complete response from the server
+        this.log('🏁 Final response received:', data);
+        this.emitToListeners('final_response', data);
+        this.emitToListeners('assistant_message', data);
+        this.emitToListeners('response', data);
+        break;
+      case 'cache_hit':
+      case 'cache_miss':
+      case 'no_cache':
+        // Cache-related messages - can be shown as system messages
+        this.log('💾 Cache-related message:', data);
+        this.emitToListeners(data.type, data);
+        break;
+      default:
+        // For any unknown type, also emit as a generic message
+        this.log('🔍 Unknown message type, emitting as generic:', data.type);
+        this.emitToListeners('assistant_message', data);
+        this.emitToListeners('response', data);
         break;
     }
   }

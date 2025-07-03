@@ -417,7 +417,12 @@ Success Criteria:
 
 
 **Date**: 2025-07-02
-**Current Task**: Remove some of the bugs in the new frontend. Look into hosting on AWS.
+**Current Task**: Remove some of the bugs in the new frontend. 
+
+[] Enhance the ChatContainer component with better UX
+[] Implement proper message formatting for fantasy football advice
+[] Add typing indicators and loading states
+[] Test and refine the WebSocket connection stability
 
 **Completed Today**:
 

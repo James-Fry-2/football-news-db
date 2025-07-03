@@ -3,7 +3,9 @@ import { Sidebar } from '../components/Sidebar';
 import { MessageCircle } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { useWebSocketChat } from '../hooks/useWebSocketChat';
+import { useConversationHistory } from '../hooks/useConversationHistory';
 import { ChatContainer } from '../components/ChatContainer';
+import { chatService } from '../services/chatService';
 
 // Mock user for development
 const mockUser = {
@@ -14,21 +16,26 @@ const mockUser = {
 
 // Convert WebSocket messages to ChatContainer format
 const convertWebSocketMessages = (wsMessages: any[]) => {
-  // Filter out empty messages and system messages like ping/pong
   const validMessages = wsMessages.filter(msg => 
+    msg.id && 
     msg.content && 
     msg.content.trim() !== '' && 
-    msg.type !== 'ping' && 
+    msg.timestamp &&
+    msg.type !== 'ping' &&
     msg.type !== 'pong' &&
-    msg.type !== 'system'
+    msg.type !== 'system' &&
+    msg.type !== 'typing'
   );
 
-  return validMessages.map((msg, index) => ({
-    id: msg.id || `msg-${index}-${Date.now()}`,
-    content: msg.content || '',
-    timestamp: new Date(msg.timestamp || Date.now()),
-    sender: (msg.type === 'token' || msg.type === 'chunk' || msg.sender === 'assistant') ? 'assistant' as const : 'user' as const,
-    type: msg.type === 'error' ? 'error' as const : 'text' as const
+  return validMessages.map((msg) => ({
+    id: msg.id,
+    content: msg.content,
+    timestamp: new Date(msg.timestamp),
+    sender: msg.sender,
+    type: msg.type || 'text',
+    metadata: msg.metadata,
+    status: msg.status || 'complete',
+    isStreaming: msg.isStreaming || false,
   }));
 };
 
@@ -51,6 +58,14 @@ export const ChatPage = () => {
     autoConnect: true,
     enableRealtimeUpdates: true
   });
+
+  // Conversation history hook
+  const {
+    conversations,
+    loading: conversationsLoading,
+    error: conversationsError,
+    refetch: refetchConversations
+  } = useConversationHistory(mockUser.id);
 
   // Set initial user ID in localStorage if not present
   useEffect(() => {
@@ -108,9 +123,18 @@ export const ChatPage = () => {
     }
   };
 
-  const handleDeleteConversation = (conversationId: string) => {
-    if (activeConversationId === conversationId) {
-      setActiveConversationId(undefined);
+  const handleDeleteConversation = async (conversationId: string) => {
+    try {
+      await chatService.deleteConversation(conversationId);
+      // Refresh conversations list
+      await refetchConversations();
+      // If deleting the active conversation, clear it
+      if (activeConversationId === conversationId) {
+        setActiveConversationId(undefined);
+        clearMessages();
+      }
+    } catch (error) {
+      console.error('Failed to delete conversation:', error);
     }
   };
 
@@ -120,6 +144,10 @@ export const ChatPage = () => {
     try {
       // Send the message via WebSocket
       await sendMessage(message);
+      // Refresh conversations list to update last message and timestamp
+      setTimeout(async () => {
+        await refetchConversations();
+      }, 1000); // Small delay to ensure backend has processed the message
     } catch (error) {
       console.error('Failed to send message:', error);
       throw error; // Re-throw to let ChatContainer handle it
@@ -140,6 +168,10 @@ export const ChatPage = () => {
         onNewChat={handleNewChat}
         onDeleteConversation={handleDeleteConversation}
         userId={mockUser.id}
+        conversations={conversations}
+        loading={conversationsLoading}
+        error={conversationsError}
+        onRefresh={refetchConversations}
       />
 
       {/* Main Chat Area */}
